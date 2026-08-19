@@ -1,5 +1,7 @@
 //! Log workspace (prototype screen 01): refs tree · filter bar · commit list
-//! with the lane graph · status bar · commit details.
+//! with the lane graph · status bar · commit details (or a file diff).
+
+use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, Timelike};
 use gpui::prelude::FluentBuilder;
@@ -8,12 +10,14 @@ use gpui::{
     PathBuilder, Pixels, Point, Rgba, StatefulInteractiveElement, Styled, Window, canvas, div, point, px,
     quad, size, uniform_list,
 };
+use gpui_component::input::Input;
 use sluice_core::*;
+use sluice_domain::{DateFilter, LogSnapshot};
 use sluice_graph::{Edge, RowLayout};
 
-use crate::icons::{icon, icon16};
+use crate::icons::{icon_b, icon_f};
 use crate::theme::{FONT_HEADING, FONT_MONO, Theme};
-use crate::workbench::{Workbench, agent_badge, section_label};
+use crate::workbench::{Popup, Workbench, agent_badge, section_label};
 
 pub const ROW_H: f32 = 26.;
 const LANE_X0: f32 = 12.;
@@ -40,33 +44,39 @@ enum SideRow {
 
 impl Workbench {
     fn graph_width(&self) -> f32 {
-        let lanes = self.store.graph.max_lanes.max(3) as f32;
+        let lanes = self.log.as_ref().map(|l| l.graph.max_lanes).unwrap_or(1).max(3) as f32;
         (LANE_X0 + (lanes - 1.) * LANE_DX + 20.).max(62.)
     }
 
-    pub(crate) fn render_log(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_log(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let center: gpui::AnyElement = if self.commit_diff.is_some() {
+            self.render_diff_view(false, cx).into_any_element()
+        } else {
+            self.render_log_center(window, cx).into_any_element()
+        };
+        let sidebar: Option<gpui::AnyElement> =
+            (!self.sidebar_hidden).then(|| self.render_refs_sidebar(cx).into_any_element());
         div()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .flex()
-            .child(self.render_refs_sidebar(cx))
-            .child(self.render_log_center(cx))
-            .child(self.render_details())
+            .children(sidebar)
+            .child(center)
+            .child(self.render_details(cx))
     }
 
     // ----- refs sidebar ----------------------------------------------------
 
-    fn side_rows(&self) -> Vec<SideRow> {
+    fn side_rows(&self, log: &LogSnapshot) -> Vec<SideRow> {
         let mut rows = vec![SideRow::Head, SideRow::Group("Local")];
-        for (ix, r) in self.store.refs.iter().enumerate() {
+        for (ix, r) in log.refs.iter().enumerate() {
             if r.kind == RefKind::LocalBranch {
                 rows.push(SideRow::Ref(ix));
             }
         }
         rows.push(SideRow::Group("Remote"));
-        let mut remotes: Vec<String> = self
-            .store
+        let mut remotes: Vec<String> = log
             .refs
             .iter()
             .filter_map(|r| match &r.kind {
@@ -78,14 +88,14 @@ impl Workbench {
         remotes.dedup();
         for remote in remotes {
             rows.push(SideRow::Remote(remote.clone()));
-            for (ix, r) in self.store.refs.iter().enumerate() {
+            for (ix, r) in log.refs.iter().enumerate() {
                 if matches!(&r.kind, RefKind::RemoteBranch { remote: rm } if *rm == remote) {
                     rows.push(SideRow::Ref(ix));
                 }
             }
         }
         rows.push(SideRow::Group("Tags"));
-        for (ix, r) in self.store.refs.iter().enumerate() {
+        for (ix, r) in log.refs.iter().enumerate() {
             if r.kind == RefKind::Tag {
                 rows.push(SideRow::Ref(ix));
             }
@@ -95,30 +105,27 @@ impl Workbench {
 
     fn render_refs_sidebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let rows = self.side_rows();
+        let log = self.log.clone();
         let head_branch = self
-            .store
+            .repo
             .info
             .head
             .branch
             .clone()
             .unwrap_or_else(|| "detached".into());
-        let ahead = self.store.info.head.ahead;
+        let ahead = self.repo.info.head.ahead;
         let selected_ref = self.selected_ref.clone();
-        let head_full = self
-            .store
-            .refs
-            .iter()
-            .find(|r| r.is_head)
-            .map(|r| r.full_name.clone());
 
-        let list = div()
+        let mut list = div()
             .id("refs-scroll")
             .flex_1()
             .min_h_0()
             .overflow_y_scroll()
-            .py(px(6.))
-            .children(rows.into_iter().enumerate().map(|(i, row)| {
+            .py(px(6.));
+        if let Some(log) = log {
+            let head_full = log.refs.iter().find(|r| r.is_head).map(|r| r.full_name.clone());
+            let rows = self.side_rows(&log);
+            list = list.children(rows.into_iter().enumerate().map(|(i, row)| {
                 let (label, depth, icon_name, tone, meta, target, selectable, bold) = match row {
                     SideRow::Head => (
                         "HEAD (Current Branch)".to_string(),
@@ -142,7 +149,7 @@ impl Workbench {
                     ),
                     SideRow::Remote(name) => (name, 1, "folder", t.muted, String::new(), None, false, false),
                     SideRow::Ref(ix) => {
-                        let r = &self.store.refs[ix];
+                        let r = &log.refs[ix];
                         let (label, depth, icon_name, tone) = match &r.kind {
                             RefKind::LocalBranch => {
                                 let tone = if r.is_head { t.yellow } else { t.muted };
@@ -192,16 +199,22 @@ impl Workbench {
                     .when(on, |d| d.bg(t.cyan_16))
                     .when(bold || on, |d| d.font_weight(gpui::FontWeight::SEMIBOLD))
                     .when(selectable, |d| {
-                        d.cursor_pointer().on_click(cx.listener(move |this, _, _, cx| {
-                            let next = if this.selected_ref == target_for_click {
-                                None
-                            } else {
-                                target_for_click.clone()
-                            };
-                            this.pick_ref(next, cx);
-                        }))
+                        d.cursor_pointer()
+                            .hover(move |s| s.bg(if on { t.cyan_16 } else { t.ink_08 }))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                let next = if this.selected_ref == target_for_click {
+                                    None
+                                } else {
+                                    target_for_click.clone()
+                                };
+                                this.pick_ref(next, cx);
+                            }))
                     })
-                    .child(icon(icon_name, px(13.), tone))
+                    .child(match icon_name {
+                        "tag" | "star" | "folder" => icon_f(icon_name, px(14.), tone),
+                        "caret-down" => icon_b(icon_name, px(12.), tone),
+                        _ => icon_b(icon_name, px(14.), tone),
+                    })
                     .child(div().truncate().child(label))
                     .child(
                         div()
@@ -212,6 +225,7 @@ impl Workbench {
                             .child(meta),
                     )
             }));
+        }
 
         div()
             .w(px(246.))
@@ -230,7 +244,7 @@ impl Workbench {
                     .flex()
                     .items_center()
                     .gap(px(7.))
-                    .child(icon("magnifying-glass", px(14.), t.faint))
+                    .child(icon_b("magnifying-glass", px(14.), t.faint))
                     .child(
                         div()
                             .text_size(px(12.5))
@@ -243,8 +257,9 @@ impl Workbench {
 
     // ----- center: filter bar + list + status ------------------------------
 
-    fn render_filter_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_filter_bar(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        let search_focused = gpui::Focusable::focus_handle(self.search.read(cx), cx).is_focused(window);
         let toggle = |on: bool, label: &'static str| {
             div()
                 .font_family(FONT_MONO)
@@ -255,7 +270,7 @@ impl Workbench {
                 .when(!on, |d| d.text_color(t.muted))
                 .child(label)
         };
-        let chip = |label: &'static str| {
+        let chip = |on: bool, label: String| {
             div()
                 .flex()
                 .items_center()
@@ -264,16 +279,36 @@ impl Workbench {
                 .px(px(10.))
                 .py(px(4.))
                 .rounded(px(7.))
-                .text_color(t.muted)
+                .text_color(if on { t.cyan_deep } else { t.muted })
                 .bg(t.surface)
                 .border_1()
-                .border_color(t.line)
+                .border_color(if on { t.cyan } else { t.line })
                 .shadow_sm()
+                .hover(move |s| s.border_color(t.cyan).text_color(t.cyan_deep))
                 .child(label)
-                .child(icon("caret-down", px(10.), t.muted))
+                .child(icon_b(
+                    "caret-down",
+                    px(10.),
+                    if on { t.cyan_deep } else { t.muted },
+                ))
         };
-        let ai_only = self.ai_only;
+        let ai_only = self.filter.ai_only;
+        let users_on = !self.filter.authors.is_empty();
+        let users_label = if users_on {
+            format!("User · {}", self.filter.authors.len())
+        } else {
+            "User".to_string()
+        };
+        let date_on = self.filter.date != DateFilter::Any;
+        let date_label = self.filter.date.label().to_string();
+        let branch_label = match &self.selected_ref {
+            Some(r) => format!("Branch · {}", r.rsplit('/').next().unwrap_or(r)),
+            None => "Branch".to_string(),
+        };
+        let branch_on = self.selected_ref.is_some();
+
         div()
+            .relative()
             .px(px(10.))
             .py(px(7.))
             .border_b_1()
@@ -287,46 +322,96 @@ impl Workbench {
                     .flex()
                     .items_center()
                     .gap(px(6.))
-                    .min_w(px(210.))
+                    .min_w(px(230.))
                     .px(px(9.))
-                    .py(px(4.))
+                    .py(px(2.))
                     .rounded(px(7.))
                     .bg(t.surface)
                     .border_1()
-                    .border_color(t.line)
-                    .child(icon("magnifying-glass", px(13.), t.faint))
+                    .border_color(if search_focused { t.cyan } else { t.line })
+                    .child(icon_b(
+                        "magnifying-glass",
+                        px(13.),
+                        if search_focused { t.cyan } else { t.faint },
+                    ))
                     .child(
                         div()
+                            .flex_1()
+                            .min_w_0()
                             .text_size(px(12.5))
-                            .text_color(t.faint)
-                            .child("Text or hash"),
+                            .child(Input::new(&self.search).appearance(false)),
                     )
                     .child(
                         div()
                             .id("rx")
-                            .ml_auto()
                             .cursor_pointer()
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.rx = !this.rx;
-                                cx.notify();
+                                this.filter.regex = !this.filter.regex;
+                                this.apply_filter(cx);
                             }))
-                            .child(toggle(self.rx, ".*")),
+                            .child(toggle(self.filter.regex, ".*")),
                     )
                     .child(
                         div()
                             .id("cc")
                             .cursor_pointer()
                             .on_click(cx.listener(|this, _, _, cx| {
-                                this.cc = !this.cc;
-                                cx.notify();
+                                this.filter.case_sensitive = !this.filter.case_sensitive;
+                                this.apply_filter(cx);
                             }))
-                            .child(toggle(self.cc, "Cc")),
+                            .child(toggle(self.filter.case_sensitive, "Cc")),
                     ),
             )
-            .child(chip("Branch"))
-            .child(chip("User"))
-            .child(chip("Date"))
-            .child(chip("Paths"))
+            .child(
+                div()
+                    .id("f-branch")
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        if this.selected_ref.is_some() {
+                            this.pick_ref(None, cx);
+                        } else {
+                            this.toast("在左侧 refs 树中点击分支 / 标签即可按其过滤", cx);
+                        }
+                    }))
+                    .child(chip(branch_on, branch_label)),
+            )
+            .child(
+                div()
+                    .id("f-user")
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.popup = if this.popup == Some(Popup::Users) {
+                            None
+                        } else {
+                            Some(Popup::Users)
+                        };
+                        cx.notify();
+                    }))
+                    .child(chip(users_on, users_label)),
+            )
+            .child(
+                div()
+                    .id("f-date")
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.popup = if this.popup == Some(Popup::Date) {
+                            None
+                        } else {
+                            Some(Popup::Date)
+                        };
+                        cx.notify();
+                    }))
+                    .child(chip(date_on, date_label)),
+            )
+            .child(
+                div()
+                    .id("f-paths")
+                    .cursor_pointer()
+                    .on_click(
+                        cx.listener(|this, _, _, cx| this.not_yet("Paths 路径过滤", "M1 后半（05 §4）", cx)),
+                    )
+                    .child(chip(false, "Paths".into())),
+            )
             .child(
                 div()
                     .id("ai-only")
@@ -342,41 +427,168 @@ impl Workbench {
                     .when(ai_only, |d| d.bg(t.mag_soft).text_color(t.mag_deep))
                     .when(!ai_only, |d| d.text_color(t.muted))
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.ai_only = !this.ai_only;
-                        cx.notify();
+                        this.filter.ai_only = !this.filter.ai_only;
+                        this.apply_filter(cx);
                     }))
-                    .child(icon(
+                    .hover(move |s| s.border_color(t.mag))
+                    .child(icon_b(
                         "sparkle",
                         px(11.),
                         if ai_only { t.mag_deep } else { t.muted },
                     ))
                     .child("仅看 AI 提交"),
             )
-            .child(div().ml_auto().child(icon("arrows-down-up", px(14.), t.muted)))
+            .child(
+                div()
+                    .id("order")
+                    .ml_auto()
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.query.order = match this.query.order {
+                            LogOrder::DateOrder => LogOrder::TopoOrder,
+                            LogOrder::TopoOrder => LogOrder::DateOrder,
+                        };
+                        let label = match this.query.order {
+                            LogOrder::DateOrder => "时间序（保持拓扑约束）",
+                            LogOrder::TopoOrder => "拓扑序",
+                        };
+                        this.toast(format!("排序：{label}"), cx);
+                        this.reload_log(cx);
+                    }))
+                    .child(icon_b(
+                        "arrows-down-up",
+                        px(14.),
+                        if self.query.order == LogOrder::TopoOrder {
+                            t.cyan
+                        } else {
+                            t.muted
+                        },
+                    )),
+            )
+            .children(self.render_popup(cx))
+    }
+
+    fn render_popup(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let t = self.theme;
+        let popup = self.popup?;
+        let mut menu = div()
+            .id("popup")
+            .absolute()
+            .top(px(36.))
+            .left(px(if popup == Popup::Users { 330. } else { 420. }))
+            .min_w(px(200.))
+            .max_h(px(320.))
+            .overflow_y_scroll()
+            .bg(t.surface)
+            .border_1()
+            .border_color(t.line)
+            .rounded(px(7.))
+            .shadow_md()
+            .py(px(4.))
+            .text_size(px(12.5))
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                this.popup = None;
+                cx.notify();
+            }));
+        match popup {
+            Popup::Users => {
+                let authors = self.log.as_ref().map(|l| l.authors.clone()).unwrap_or_default();
+                let selected = self.filter.authors.clone();
+                menu = menu.child(
+                    div()
+                        .id("users-clear")
+                        .px(px(12.))
+                        .py(px(4.))
+                        .cursor_pointer()
+                        .text_color(t.cyan_deep)
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.filter.authors.clear();
+                            this.apply_filter(cx);
+                        }))
+                        .child("全部作者"),
+                );
+                menu = menu.children(authors.into_iter().enumerate().map(|(i, name)| {
+                    let on = selected.contains(&name);
+                    let n2 = name.clone();
+                    div()
+                        .id(("user", i))
+                        .px(px(12.))
+                        .py(px(4.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .cursor_pointer()
+                        .when(on, |d| d.bg(t.sel))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if !this.filter.authors.remove(&n2) {
+                                this.filter.authors.insert(n2.clone());
+                            }
+                            this.apply_filter(cx);
+                        }))
+                        .child(crate::workbench::checkbox(&t, on, false))
+                        .child(name)
+                }));
+            }
+            Popup::Date => {
+                let current = self.filter.date;
+                menu = menu.children(DateFilter::ALL.into_iter().enumerate().map(|(i, d)| {
+                    let on = d == current;
+                    div()
+                        .id(("date", i))
+                        .px(px(12.))
+                        .py(px(4.))
+                        .cursor_pointer()
+                        .when(on, |x| x.bg(t.sel))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            this.filter.date = d;
+                            this.popup = None;
+                            this.apply_filter(cx);
+                        }))
+                        .child(if d == DateFilter::Any {
+                            "全部时间".to_string()
+                        } else {
+                            d.label().to_string()
+                        })
+                }));
+            }
+        }
+        Some(menu)
     }
 
     fn render_commit_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let count = self.store.commits.len();
+        let t = self.theme;
         let graph_w = self.graph_width();
+        let Some(log) = self.log.clone() else {
+            let msg = if self.log_loading {
+                "正在读取仓库…".to_string()
+            } else {
+                self.log_error.clone().unwrap_or_else(|| "无提交".into())
+            };
+            return div()
+                .flex_1()
+                .p(px(16.))
+                .text_color(t.muted)
+                .child(msg)
+                .into_any_element();
+        };
+        let filtered = self.filter.is_active();
+        let visible: Arc<Vec<usize>> = Arc::new(self.visible.clone());
+        let count = visible.len();
         uniform_list(
             "commits",
             count,
             cx.processor(move |this, range: std::ops::Range<usize>, _window, cx| {
-                let t = this.theme;
                 let mut items = Vec::with_capacity(range.len());
-                for ix in range {
-                    let Some(c) = this.store.commits.get(ix) else {
-                        continue;
-                    };
-                    let selected = ix == this.selected;
-                    let is_head = this.store.is_head(&c.id);
-                    let dim = this.ai_only && !c.agent.is_ai();
-                    let refs = this.store.refs_at(&c.id);
+                for vix in range {
+                    let Some(&ix) = visible.get(vix) else { continue };
+                    let Some(c) = log.commits.get(ix) else { continue };
+                    let selected = vix == this.selected;
+                    let is_head = log.is_head(&c.id);
+                    let refs = log.refs_at(&c.id);
                     let badges = ref_badges(&refs);
-                    let row = this.store.graph.rows.get(ix).cloned().unwrap_or_default();
-                    let prev_out: Vec<Edge> = if ix > 0 {
-                        this.store
-                            .graph
+                    let row = log.graph.rows.get(ix).cloned().unwrap_or_default();
+                    let prev_out: Vec<Edge> = if ix > 0 && !filtered {
+                        log.graph
                             .rows
                             .get(ix - 1)
                             .map(|r| r.out_edges.clone())
@@ -384,12 +596,28 @@ impl Workbench {
                     } else {
                         Vec::new()
                     };
+                    let row_for_paint = if filtered {
+                        RowLayout {
+                            out_edges: Vec::new(),
+                            ..row.clone()
+                        }
+                    } else {
+                        row.clone()
+                    };
                     let lane_color = t.lane(row.color);
                     let theme = t;
                     let graph = canvas(
                         move |_, _, _| (),
                         move |bounds, _, window, _| {
-                            paint_graph_row(bounds, &row, &prev_out, is_head, lane_color, &theme, window)
+                            paint_graph_row(
+                                bounds,
+                                &row_for_paint,
+                                &prev_out,
+                                is_head,
+                                lane_color,
+                                &theme,
+                                window,
+                            )
                         },
                     )
                     .w(px(graph_w))
@@ -397,7 +625,7 @@ impl Workbench {
 
                     items.push(
                         div()
-                            .id(("commit", ix))
+                            .id(("commit", vix))
                             .w_full()
                             .h(px(ROW_H))
                             .flex()
@@ -406,8 +634,8 @@ impl Workbench {
                             .pr(px(10.))
                             .cursor_pointer()
                             .when(selected, |d| d.bg(t.sel))
-                            .when(dim, |d| d.opacity(0.32))
-                            .on_click(cx.listener(move |this, _, _, cx| this.select(ix, cx)))
+                            .when(!selected, |d| d.hover(move |s| s.bg(t.ink_05)))
+                            .on_click(cx.listener(move |this, _, _, cx| this.select(vix, cx)))
                             .child(div().flex_none().w(px(graph_w)).h_full().child(graph))
                             .child(
                                 div()
@@ -432,7 +660,7 @@ impl Workbench {
                                     .border_1()
                                     .border_color(if remote { t.cyan } else { t.yellow })
                                     .text_color(if is_tag { t.muted } else { t.cyan_deep })
-                                    .child(icon("tag", px(10.), if is_tag { t.muted } else { t.cyan_deep }))
+                                    .child(icon_f("tag", px(10.), if is_tag { t.muted } else { t.cyan_deep }))
                                     .child(label)
                             }))
                             .child(agent_badge(&t, c.agent))
@@ -463,26 +691,34 @@ impl Workbench {
         .track_scroll(self.scroll.clone())
         .flex_1()
         .min_h_0()
+        .into_any_element()
     }
 
     fn render_status_bar(&self) -> impl IntoElement {
         let t = self.theme;
-        let n = self.store.commits.len();
-        let limit = self.store.query.limit;
-        let count = if n >= limit {
-            format!("前 {n} 条提交（上限 {limit}）· 加载 {}ms", self.store.load_ms)
+        let (n_all, load_ms, limit) = self
+            .log
+            .as_ref()
+            .map(|l| (l.commits.len(), l.load_ms, l.query.limit))
+            .unwrap_or((0, 0, 0));
+        let shown = self.visible.len();
+        let mut count = if n_all >= limit && limit > 0 {
+            format!("前 {n_all} 条提交（上限 {limit}）· 加载 {load_ms}ms")
         } else {
-            format!("{n} 条提交 · 加载 {}ms", self.store.load_ms)
+            format!("{n_all} 条提交 · 加载 {load_ms}ms")
         };
-        let head = &self.store.info.head;
+        if self.filter.is_active() {
+            count = format!("{shown} / {count}");
+        }
+        if self.log_loading {
+            count.push_str(" · 刷新中…");
+        }
+        let head = &self.repo.info.head;
         let ahead = head.ahead;
         let behind = head.behind;
-        let right = match &self.status {
-            Some(s) => s.clone(),
-            None => match &head.upstream {
-                Some(u) => format!("upstream {u} · watcher 待接入（M1）"),
-                None => "无 upstream · watcher 待接入（M1）".to_string(),
-            },
+        let right = match &head.upstream {
+            Some(u) => format!("upstream {u} · watcher 活跃"),
+            None => "无 upstream · watcher 活跃".to_string(),
         };
         div()
             .h(px(25.))
@@ -505,21 +741,21 @@ impl Workbench {
             .child(div().ml_auto().truncate().child(right))
     }
 
-    fn render_log_center(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_log_center(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .flex()
             .flex_col()
-            .child(self.render_filter_bar(cx))
+            .child(self.render_filter_bar(window, cx))
             .child(self.render_commit_list(cx))
             .child(self.render_status_bar())
     }
 
     // ----- details ---------------------------------------------------------
 
-    fn render_details(&self) -> impl IntoElement {
+    fn render_details(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let mut panel = div()
             .id("details")
@@ -536,20 +772,28 @@ impl Workbench {
             .child(section_label(&t, "Commit details"));
 
         let Some(detail) = self.detail.clone() else {
-            let msg = self.detail_error.clone().unwrap_or_else(|| "未选择提交".into());
+            let msg = if self.selected_commit().is_some() {
+                "读取中…"
+            } else {
+                "未选择提交"
+            };
             return panel.child(div().text_size(px(12.5)).text_color(t.muted).child(msg));
         };
-        let (d, files) = (&detail.0, &detail.1);
+        let d = &detail.detail;
+        let files = &detail.changes;
         let c = &d.commit;
-        let refs = self.store.refs_at(&c.id);
-        let refs_text = if refs.is_empty() {
-            "—".to_string()
-        } else {
-            refs.iter()
-                .map(|r| r.short_name.clone())
-                .collect::<Vec<_>>()
-                .join(" · ")
-        };
+        let refs_text = self
+            .log
+            .as_ref()
+            .map(|l| {
+                l.refs_at(&c.id)
+                    .iter()
+                    .map(|r| r.short_name.clone())
+                    .collect::<Vec<_>>()
+                    .join(" · ")
+            })
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| "—".to_string());
         let parents = if c.parents.is_empty() {
             "—（根提交）".to_string()
         } else {
@@ -585,6 +829,7 @@ impl Workbench {
         } else {
             format!("人类提交 —— 作者 {}。未发现 AI 代理 trailer。", c.author.name)
         };
+        let open_path = self.commit_diff.as_ref().map(|dv| dv.change.path.clone());
 
         panel = panel
             .child(
@@ -600,14 +845,21 @@ impl Workbench {
                     .flex()
                     .flex_col()
                     .gap(px(4.))
-                    .child(row(
-                        "Hash",
+                    .child(row("Hash", {
+                        let full = c.id.to_string();
                         div()
+                            .id("hash-copy")
                             .font_family(FONT_MONO)
                             .text_color(t.cyan_deep)
-                            .child(c.id.short(12).to_string())
-                            .into_any_element(),
-                    ))
+                            .cursor_pointer()
+                            .hover(move |s| s.text_color(t.cyan))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(full.clone()));
+                                this.toast(format!("已复制 {}", &full[..full.len().min(12)]), cx);
+                            }))
+                            .child(format!("{}  ⎘", c.id.short(12)))
+                            .into_any_element()
+                    }))
                     .child(row(
                         "作者",
                         div()
@@ -630,7 +882,7 @@ impl Workbench {
                             .flex()
                             .items_center()
                             .gap(px(5.))
-                            .child(icon(
+                            .child(icon_b(
                                 "shield-check",
                                 px(13.),
                                 if d.has_signature { t.cyan } else { t.faint },
@@ -640,7 +892,6 @@ impl Workbench {
                     )),
             );
 
-        // message body (if any beyond the summary)
         let body = d.message.trim_start_matches(&d.commit.summary).trim();
         if !body.is_empty() {
             panel = panel.child(
@@ -665,7 +916,7 @@ impl Workbench {
                 &t,
                 format!("变更文件 · {} 个文件 +{adds} −{dels}", files.len()),
             )));
-        for f in files.iter().take(400) {
+        for (i, f) in files.iter().take(400).enumerate() {
             let (dir, name) = f.split_dir_name();
             let mark_color = match f.kind {
                 ChangeKind::Added => t.cyan,
@@ -677,13 +928,23 @@ impl Workbench {
                 (Some(a), Some(d), _) => format!("+{a} −{d}"),
                 _ => String::new(),
             };
+            let is_open = open_path.as_deref() == Some(f.path.as_str());
+            let change = f.clone();
             list = list.child(
                 div()
+                    .id(("file", i))
                     .flex()
                     .items_baseline()
                     .gap(px(7.))
                     .py(px(3.))
+                    .px(px(4.))
+                    .mx(px(-4.))
+                    .rounded(px(4.))
                     .text_size(px(12.5))
+                    .cursor_pointer()
+                    .when(is_open, |d| d.bg(t.sel))
+                    .when(!is_open, |d| d.hover(move |s| s.bg(t.ink_05)))
+                    .on_click(cx.listener(move |this, _, _, cx| this.open_commit_file(change.clone(), cx)))
                     .child(
                         div()
                             .w(px(13.))
@@ -844,9 +1105,4 @@ fn paint_graph_row(
         lane_color,
         BorderStyle::default(),
     ));
-}
-
-#[allow(dead_code)]
-fn _keep(_: &dyn Fn() -> Rgba) {
-    let _ = icon16;
 }

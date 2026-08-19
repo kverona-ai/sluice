@@ -32,7 +32,15 @@ fn make_repo() -> Option<PathBuf> {
     assert!(git(&dir, &["init", "-q", "-b", "main"]));
     std::fs::write(dir.join("a.txt"), "one\ntwo\n").ok()?;
     assert!(git(&dir, &["add", "-A"]));
-    assert!(git(&dir, &["commit", "-q", "-m", "feat: first\n\nCo-Authored-By: Claude <noreply@anthropic.com>"]));
+    assert!(git(
+        &dir,
+        &[
+            "commit",
+            "-q",
+            "-m",
+            "feat: first\n\nCo-Authored-By: Claude <noreply@anthropic.com>"
+        ]
+    ));
     assert!(git(&dir, &["checkout", "-q", "-b", "topic"]));
     std::fs::write(dir.join("b.txt"), "hello\n").ok()?;
     assert!(git(&dir, &["add", "-A"]));
@@ -40,7 +48,10 @@ fn make_repo() -> Option<PathBuf> {
     assert!(git(&dir, &["checkout", "-q", "main"]));
     std::fs::write(dir.join("a.txt"), "one\ntwo\nthree\n").ok()?;
     assert!(git(&dir, &["commit", "-q", "-am", "fix: extend a"]));
-    assert!(git(&dir, &["merge", "-q", "--no-ff", "topic", "-m", "merge: topic"]));
+    assert!(git(
+        &dir,
+        &["merge", "-q", "--no-ff", "topic", "-m", "merge: topic"]
+    ));
     assert!(git(&dir, &["tag", "v0.0.1"]));
     Some(dir)
 }
@@ -51,7 +62,7 @@ fn refs_log_and_changes() {
         eprintln!("git not available; skipping");
         return;
     };
-    let reader = GixReader::discover(&dir).expect("discover");
+    let reader = GixReader::discover(&dir, Console::new()).expect("discover");
     let info = reader.info().expect("info");
     assert_eq!(info.head.branch.as_deref(), Some("main"));
     assert!(!info.is_bare);
@@ -76,9 +87,16 @@ fn refs_log_and_changes() {
     assert_eq!(first.agent, Agent::ClaudeCode);
 
     let detail = reader.commit_detail(&first.id).expect("detail");
-    assert!(detail.trailers.iter().any(|(k, _)| k.eq_ignore_ascii_case("co-authored-by")));
+    assert!(
+        detail
+            .trailers
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case("co-authored-by"))
+    );
 
-    let changes = reader.commit_changes(&log[pos("fix: extend a")].id).expect("changes");
+    let changes = reader
+        .commit_changes(&log[pos("fix: extend a")].id)
+        .expect("changes");
     assert_eq!(changes.len(), 1);
     assert_eq!(changes[0].path, "a.txt");
     assert_eq!(changes[0].kind, ChangeKind::Modified);
@@ -88,6 +106,28 @@ fn refs_log_and_changes() {
     let root_changes = reader.commit_changes(&first.id).expect("root changes");
     assert_eq!(root_changes[0].kind, ChangeKind::Added);
     assert_eq!(root_changes[0].additions, Some(2));
+
+    let fix = &log[pos("fix: extend a")];
+    let new = reader
+        .blob(&BlobRev::Commit(fix.id.clone()), "a.txt")
+        .unwrap()
+        .unwrap();
+    let old = reader
+        .blob(&BlobRev::ParentOf(fix.id.clone()), "a.txt")
+        .unwrap()
+        .unwrap();
+    assert_eq!(String::from_utf8_lossy(&new), "one\ntwo\nthree\n");
+    assert_eq!(String::from_utf8_lossy(&old), "one\ntwo\n");
+    assert!(reader.blob(&BlobRev::Head, "nope.txt").unwrap().is_none());
+    assert_eq!(
+        reader.blob(&BlobRev::Index, "b.txt").unwrap().unwrap(),
+        b"hello\n"
+    );
+    assert_eq!(
+        reader.blob(&BlobRev::Worktree, "b.txt").unwrap().unwrap(),
+        b"hello\n"
+    );
+    assert!(reader.console().revision() > 0);
 
     let _ = std::fs::remove_dir_all(&dir);
 }

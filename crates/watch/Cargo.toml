@@ -11,4 +11,5 @@ description = "Sluice file watcher: worktree + .git change detection with deboun
 [dependencies]
 anyhow.workspace = true
 notify.workspace = true
+async-channel.workspace = true
 tracing.workspace = true

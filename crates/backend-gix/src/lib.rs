@@ -18,16 +18,37 @@ const MAX_AHEAD_BEHIND_WALK: usize = 10_000;
 
 pub struct GixReader {
     repo: gix::ThreadSafeRepository,
+    console: Console,
 }
 
 impl GixReader {
     /// Open the repository containing `path` (any subdirectory works; worktrees resolve to their common dir).
-    pub fn discover(path: impl AsRef<Path>) -> Result<Self> {
+    pub fn discover(path: impl AsRef<Path>, console: Console) -> Result<Self> {
         let repo = gix::discover(path.as_ref())
             .with_context(|| format!("no git repository found at or above {}", path.as_ref().display()))?;
         Ok(Self {
             repo: repo.into_sync(),
+            console,
         })
+    }
+
+    pub fn console(&self) -> &Console {
+        &self.console
+    }
+
+    fn blob_in_tree(
+        &self,
+        repo: &gix::Repository,
+        tree: &gix::Tree<'_>,
+        path: &str,
+    ) -> Result<Option<Vec<u8>>> {
+        let Some(entry) = tree.lookup_entry_by_path(path)? else {
+            return Ok(None);
+        };
+        if !entry.mode().is_blob_or_symlink() {
+            return Ok(None);
+        }
+        Ok(Some(repo.find_blob(entry.object_id())?.data.clone()))
     }
 
     fn repo(&self) -> gix::Repository {
@@ -215,6 +236,7 @@ impl GitReader for GixReader {
     }
 
     fn refs(&self) -> Result<Vec<Ref>> {
+        let t0 = std::time::Instant::now();
         let repo = self.repo();
         let head_name = repo.head_name().ok().flatten().map(|n| n.as_bstr().to_string());
         let mut out = Vec::new();
@@ -252,10 +274,13 @@ impl GitReader for GixReader {
             });
         }
         out.sort_by(|a, b| a.short_name.cmp(&b.short_name));
+        self.console
+            .read("git for-each-ref", t0.elapsed(), format!("{} refs", out.len()));
         Ok(out)
     }
 
     fn log(&self, query: &LogQuery) -> Result<Vec<Commit>> {
+        let t0 = std::time::Instant::now();
         let repo = self.repo();
         let tips: Vec<gix::ObjectId> = if query.tips.is_empty() {
             self.all_tips(&repo)?
@@ -281,6 +306,20 @@ impl GitReader for GixReader {
                 info.parent_ids.iter().copied().collect(),
             )?);
         }
+        let order = match query.order {
+            LogOrder::DateOrder => "--date-order",
+            LogOrder::TopoOrder => "--topo-order",
+        };
+        let scope = if query.tips.is_empty() {
+            "--all".to_string()
+        } else {
+            format!("{} tips", query.tips.len())
+        };
+        self.console.read(
+            format!("git log {order} --max-count={} {scope}", query.limit),
+            t0.elapsed(),
+            format!("{} commits", out.len()),
+        );
         Ok(out)
     }
 
@@ -316,6 +355,7 @@ impl GitReader for GixReader {
     }
 
     fn commit_changes(&self, id: &Oid) -> Result<Vec<FileChange>> {
+        let t0 = std::time::Instant::now();
         let repo = self.repo();
         let gid = parse_oid(id)?;
         let c = repo.find_commit(gid)?;
@@ -399,7 +439,62 @@ impl GitReader for GixReader {
             });
         }
         out.sort_by(|a, b| a.path.cmp(&b.path));
+        self.console.read(
+            format!("git show --numstat {}", id.short(10)),
+            t0.elapsed(),
+            format!("{} files", out.len()),
+        );
         Ok(out)
+    }
+
+    fn blob(&self, rev: &BlobRev, path: &str) -> Result<Option<Vec<u8>>> {
+        let repo = self.repo();
+        match rev {
+            BlobRev::Commit(id) => {
+                let tree = repo.find_commit(parse_oid(id)?)?.tree()?;
+                self.blob_in_tree(&repo, &tree, path)
+            }
+            BlobRev::ParentOf(id) => {
+                let c = repo.find_commit(parse_oid(id)?)?;
+                match c.parent_ids().next() {
+                    Some(p) => {
+                        let tree = repo.find_commit(p.detach())?.tree()?;
+                        self.blob_in_tree(&repo, &tree, path)
+                    }
+                    None => Ok(None),
+                }
+            }
+            BlobRev::Head => match repo.head_tree() {
+                Ok(tree) => self.blob_in_tree(&repo, &tree, path),
+                Err(_) => Ok(None), // unborn HEAD
+            },
+            BlobRev::Index => {
+                let index = repo.index_or_empty()?;
+                let Some(entry) = index.entry_by_path(path.into()) else {
+                    return Ok(None);
+                };
+                if entry.mode.is_submodule()
+                    || entry
+                        .mode
+                        .to_tree_entry_mode()
+                        .is_none_or(|m| !m.is_blob_or_symlink())
+                {
+                    return Ok(None);
+                }
+                Ok(Some(repo.find_blob(entry.id)?.data.clone()))
+            }
+            BlobRev::Worktree => {
+                let Some(workdir) = repo.workdir() else {
+                    return Ok(None);
+                };
+                let full = workdir.join(path);
+                match std::fs::read(&full) {
+                    Ok(data) => Ok(Some(data)),
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+                    Err(e) => Err(e).with_context(|| format!("reading {}", full.display())),
+                }
+            }
+        }
     }
 }
 

@@ -14,3 +14,4 @@ thiserror.workspace = true
 serde.workspace = true
 chrono.workspace = true
 bstr.workspace = true
+imara-diff.workspace = true

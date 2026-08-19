@@ -31,4 +31,22 @@ pub trait GitReader: Send + Sync {
     fn commit_detail(&self, id: &Oid) -> Result<CommitDetail>;
     /// Changes of `id` against its first parent (or the empty tree for root commits).
     fn commit_changes(&self, id: &Oid) -> Result<Vec<FileChange>>;
+    /// Raw content of `path` at `rev` (None when the path does not exist there). The
+    /// domain layer composes diffs from pairs of these with `sluice_core::diff`.
+    fn blob(&self, rev: &BlobRev, path: &str) -> Result<Option<Vec<u8>>>;
+}
+
+/// Where to read a file from.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BlobRev {
+    /// The tree of a commit.
+    Commit(Oid),
+    /// The first parent of a commit (empty tree for roots).
+    ParentOf(Oid),
+    /// HEAD's tree.
+    Head,
+    /// The index (staging area).
+    Index,
+    /// The working tree file on disk.
+    Worktree,
 }

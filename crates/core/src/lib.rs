@@ -7,8 +7,11 @@
 
 pub mod agent;
 pub mod backend;
+pub mod console;
+pub mod diff;
 pub mod types;
 
 pub use agent::*;
 pub use backend::*;
+pub use console::*;
 pub use types::*;

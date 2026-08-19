@@ -187,3 +187,67 @@ impl Default for LogQuery {
         }
     }
 }
+
+/// Working-tree status of one path (porcelain v2 semantics, 05 §5).
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct StatusEntry {
+    pub path: String,
+    /// Previous path for renames / copies (staged side).
+    pub old_path: Option<String>,
+    /// Index vs HEAD.
+    pub staged: Option<ChangeKind>,
+    /// Worktree vs index.
+    pub unstaged: Option<ChangeKind>,
+    pub untracked: bool,
+    /// Unmerged XY code (e.g. "UU", "AA") when in conflict.
+    pub conflict: Option<String>,
+    pub submodule: bool,
+}
+
+impl StatusEntry {
+    pub fn is_staged(&self) -> bool {
+        self.staged.is_some()
+    }
+    pub fn is_unstaged(&self) -> bool {
+        self.unstaged.is_some() || self.untracked
+    }
+}
+
+/// A git operation that is in progress on the repository (05 §6).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum InProgressOp {
+    Merge,
+    Rebase,
+    CherryPick,
+    Revert,
+    Bisect,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct WorkStatus {
+    pub entries: Vec<StatusEntry>,
+    pub branch: Option<String>,
+    pub upstream: Option<String>,
+    pub ahead: usize,
+    pub behind: usize,
+    pub in_progress: Option<InProgressOp>,
+}
+
+impl WorkStatus {
+    pub fn staged(&self) -> impl Iterator<Item = &StatusEntry> {
+        self.entries
+            .iter()
+            .filter(|e| e.staged.is_some() && e.conflict.is_none())
+    }
+    pub fn unstaged(&self) -> impl Iterator<Item = &StatusEntry> {
+        self.entries
+            .iter()
+            .filter(|e| e.unstaged.is_some() && !e.untracked && e.conflict.is_none())
+    }
+    pub fn untracked(&self) -> impl Iterator<Item = &StatusEntry> {
+        self.entries.iter().filter(|e| e.untracked)
+    }
+    pub fn conflicted(&self) -> impl Iterator<Item = &StatusEntry> {
+        self.entries.iter().filter(|e| e.conflict.is_some())
+    }
+}

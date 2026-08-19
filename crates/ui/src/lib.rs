@@ -2,7 +2,11 @@
 //! Visual language follows the Claude Design prototype (`SluiceDesktop.dc.html`,
 //! Broadsheet design system: Source Serif 4, cyan / magenta / process-yellow inks).
 
+pub mod ai;
 pub mod assets;
+pub mod changes;
+pub mod console;
+pub mod diff_view;
 pub mod icons;
 pub mod log;
 pub mod theme;
@@ -13,23 +17,69 @@ use gpui::{App, KeyBinding};
 pub use theme::Theme;
 pub use workbench::Workbench;
 
-/// Fonts, key bindings. Call once from the application entry point.
+/// Fonts, gpui-component, key bindings. Call once from the application entry point.
 pub fn init(cx: &mut App) {
     assets::load_fonts(cx);
+    gpui_component::init(cx);
+    sync_component_theme(cx, &Theme::light());
+    let ctx = Some("Workbench");
+    // Single keys must not fire while a text input has focus (05 §11): `!Input` scans the whole context stack.
+    let nav = Some("Workbench && !Input");
     cx.bind_keys([
-        KeyBinding::new("up", workbench::MoveUp, Some("Workbench")),
-        KeyBinding::new("down", workbench::MoveDown, Some("Workbench")),
-        KeyBinding::new("k", workbench::MoveUp, Some("Workbench")),
-        KeyBinding::new("j", workbench::MoveDown, Some("Workbench")),
-        KeyBinding::new("home", workbench::SelectFirst, Some("Workbench")),
-        KeyBinding::new("end", workbench::SelectLast, Some("Workbench")),
-        KeyBinding::new("pageup", workbench::PageUp, Some("Workbench")),
-        KeyBinding::new("pagedown", workbench::PageDown, Some("Workbench")),
-        // IDEA preset (05 §11): ⌘9 Log · ⌘0 Local Changes · ⌘6 Console · ⌥⌘Y refresh
-        KeyBinding::new("cmd-9", workbench::ShowLog, Some("Workbench")),
-        KeyBinding::new("cmd-0", workbench::ShowChanges, Some("Workbench")),
-        KeyBinding::new("cmd-6", workbench::ShowConsole, Some("Workbench")),
-        KeyBinding::new("cmd-alt-y", workbench::Refresh, Some("Workbench")),
-        KeyBinding::new("ctrl-alt-y", workbench::Refresh, Some("Workbench")),
+        KeyBinding::new("up", workbench::MoveUp, nav),
+        KeyBinding::new("down", workbench::MoveDown, nav),
+        KeyBinding::new("k", workbench::MoveUp, nav),
+        KeyBinding::new("j", workbench::MoveDown, nav),
+        KeyBinding::new("home", workbench::SelectFirst, nav),
+        KeyBinding::new("end", workbench::SelectLast, nav),
+        KeyBinding::new("pageup", workbench::PageUp, nav),
+        KeyBinding::new("pagedown", workbench::PageDown, nav),
+        KeyBinding::new("escape", workbench::Escape, ctx),
+        KeyBinding::new("space", workbench::ToggleSelected, nav),
+        KeyBinding::new("f7", workbench::NextHunk, nav),
+        KeyBinding::new("shift-f7", workbench::PrevHunk, nav),
+        // IDEA preset (05 §11)
+        KeyBinding::new("cmd-9", workbench::ShowLog, ctx),
+        KeyBinding::new("cmd-0", workbench::ShowChanges, ctx),
+        KeyBinding::new("cmd-6", workbench::ShowConsole, ctx),
+        KeyBinding::new("cmd-alt-y", workbench::Refresh, ctx),
+        KeyBinding::new("ctrl-alt-y", workbench::Refresh, ctx),
+        KeyBinding::new("cmd-f", workbench::FocusSearch, ctx),
+        KeyBinding::new("ctrl-f", workbench::FocusSearch, ctx),
+        KeyBinding::new("cmd-k", workbench::FocusCommit, ctx),
+        KeyBinding::new("ctrl-k", workbench::FocusCommit, ctx),
+        KeyBinding::new("cmd-enter", workbench::CommitAction, ctx),
+        KeyBinding::new("ctrl-enter", workbench::CommitAction, ctx),
+        KeyBinding::new("cmd-alt-a", workbench::StageAll, ctx),
+        KeyBinding::new("ctrl-alt-a", workbench::StageAll, ctx),
+        KeyBinding::new("cmd-alt-u", workbench::UnstageAll, ctx),
+        KeyBinding::new("ctrl-alt-u", workbench::UnstageAll, ctx),
+        KeyBinding::new("cmd-alt-\\", workbench::ToggleSideBySide, ctx),
+        KeyBinding::new("ctrl-alt-\\", workbench::ToggleSideBySide, ctx),
+        // Windows / Linux: the same bindings with ctrl
+        KeyBinding::new("alt-9", workbench::ShowLog, ctx),
+        KeyBinding::new("alt-0", workbench::ShowChanges, ctx),
+        KeyBinding::new("alt-6", workbench::ShowConsole, ctx),
     ]);
+}
+
+/// Make gpui-component widgets (text inputs …) use the Broadsheet tokens.
+pub fn sync_component_theme(cx: &mut App, t: &Theme) {
+    let theme = gpui_component::theme::Theme::global_mut(cx);
+    theme.mode = if t.is_dark {
+        gpui_component::theme::ThemeMode::Dark
+    } else {
+        gpui_component::theme::ThemeMode::Light
+    };
+    theme.colors.foreground = t.ink.into();
+    theme.colors.muted_foreground = t.faint.into();
+    theme.colors.background = t.surface.into();
+    theme.colors.border = t.line.into();
+    theme.colors.primary = t.cyan.into();
+    theme.colors.accent = t.cyan_soft.into();
+    theme.colors.ring = t.cyan.into();
+    theme.colors.caret = t.cyan_deep.into();
+    theme.colors.selection = t.sel_line.into();
+    theme.font_family = theme::FONT_BODY.into();
+    theme.font_size = gpui::px(13.);
 }

@@ -11,7 +11,8 @@ use gpui::{
     App, AppContext as _, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
     WindowBackgroundAppearance, WindowBounds, WindowOptions, actions, point, px, size,
 };
-use sluice_domain::RepoStore;
+use gpui_component::Root;
+use sluice_domain::Repo;
 use sluice_ui::Workbench;
 
 #[derive(Parser, Debug)]
@@ -99,7 +100,7 @@ fn resolve_path(path: Option<PathBuf>) -> Result<PathBuf> {
 fn dump_log(path: Option<PathBuf>, limit: usize, topo: bool) -> Result<()> {
     use sluice_core::{GitReader, LogOrder, LogQuery};
     let path = resolve_path(path)?;
-    let reader = sluice_backend_gix::GixReader::discover(&path)?;
+    let reader = sluice_backend_gix::GixReader::discover(&path, sluice_core::Console::new())?;
     let info = reader.info()?;
     println!(
         "{} ({}) HEAD={} upstream={:?} ahead={} behind={}",
@@ -143,11 +144,11 @@ fn dump_log(path: Option<PathBuf>, limit: usize, topo: bool) -> Result<()> {
 
 fn run_app(path: Option<PathBuf>) -> Result<()> {
     let path = resolve_path(path)?;
-    let store = RepoStore::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let repo = Repo::open(&path).with_context(|| format!("opening {}", path.display()))?;
     let title = format!(
         "{} — {}",
-        store.info.name,
-        store.info.head.branch.as_deref().unwrap_or("detached HEAD")
+        repo.info.name,
+        repo.info.head.branch.as_deref().unwrap_or("detached HEAD")
     );
 
     Application::new()
@@ -181,7 +182,8 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                 ..Default::default()
             };
             cx.open_window(options, |window, cx| {
-                cx.new(|cx| Workbench::new(store, window, cx))
+                let workbench = cx.new(|cx| Workbench::new(repo, window, cx));
+                cx.new(|cx| Root::new(gpui::AnyView::from(workbench), window, cx))
             })
             .expect("failed to open the Sluice window");
             cx.activate(true);

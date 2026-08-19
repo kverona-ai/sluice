@@ -5,12 +5,13 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "MIT",
     "MIT-0",
+    "0BSD",
+    "NCSA",
     "BSD-2-Clause",
     "BSD-3-Clause",
     "ISC",
     "Zlib",
     "Unicode-3.0",
-    "Unicode-DFS-2016",
     "CC0-1.0",
     "OFL-1.1",
     "MPL-2.0",      # case-by-case review; file-level copyleft is acceptable
@@ -20,7 +21,7 @@ allow = [
 confidence-threshold = 0.8
 
 [bans]
-multiple-versions = "warn"
+multiple-versions = "allow"   # gpui / gix pull two generations of several crates; revisit at each upgrade window
 wildcards = "allow"
 # git2 / libgit2 must not enter the dependency graph (02 §2 decision).
 deny = [{ crate = "git2" }, { crate = "libgit2-sys" }]
