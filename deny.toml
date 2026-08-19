@@ -1,0 +1,33 @@
+# cargo-deny policy (05 §9.1): permissive licenses only; GPL/AGPL may not be linked.
+[licenses]
+allow = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "Unicode-DFS-2016",
+    "CC0-1.0",
+    "OFL-1.1",
+    "MPL-2.0",      # case-by-case review; file-level copyleft is acceptable
+    "BSL-1.0",
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.8
+
+[bans]
+multiple-versions = "warn"
+wildcards = "allow"
+# git2 / libgit2 must not enter the dependency graph (02 §2 decision).
+deny = [{ crate = "git2" }, { crate = "libgit2-sys" }]
+
+[advisories]
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

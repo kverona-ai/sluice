@@ -1,0 +1,16 @@
+[package]
+name = "sluice-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Sluice core: VCS-neutral domain types, GitBackend trait and capability declarations"
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+serde.workspace = true
+chrono.workspace = true
+bstr.workspace = true

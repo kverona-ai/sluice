@@ -1,0 +1,67 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/core",
+    "crates/backend-gix",
+    "crates/backend-cli",
+    "crates/domain",
+    "crates/graph",
+    "crates/watch",
+    "crates/bridge",
+    "crates/ui",
+    "crates/app",
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2024"
+license = "Apache-2.0"
+repository = "https://github.com/kverona-ai/sluice"
+rust-version = "1.95"
+authors = ["will <wuyu02@136.best>"]
+
+[workspace.dependencies]
+# --- internal crates ---
+sluice-core = { path = "crates/core" }
+sluice-backend-gix = { path = "crates/backend-gix" }
+sluice-backend-cli = { path = "crates/backend-cli" }
+sluice-domain = { path = "crates/domain" }
+sluice-graph = { path = "crates/graph" }
+sluice-watch = { path = "crates/watch" }
+sluice-bridge = { path = "crates/bridge" }
+sluice-ui = { path = "crates/ui" }
+
+# --- UI (GPUI pinned; runtime_shaders avoids needing the Xcode Metal toolchain at build time) ---
+gpui = { version = "0.2.2", features = ["runtime_shaders"] }
+gpui-component = "0.5.1"
+
+# --- git engine ---
+gix = "0.86"
+imara-diff = "0.1"
+
+# --- runtime & utils ---
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time", "process", "io-util"] }
+parking_lot = "0.12"
+smallvec = "1"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+clap = { version = "4", features = ["derive"] }
+notify = "8"
+rust-embed = "8"
+bstr = "1"
+
+[profile.dev]
+opt-level = 1          # GPUI + gix are too slow to use at opt-level 0
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+opt-level = 2          # always optimize dependencies
+
+[profile.release]
+lto = "thin"
+codegen-units = 4

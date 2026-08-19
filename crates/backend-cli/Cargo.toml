@@ -1,0 +1,16 @@
+[package]
+name = "sluice-backend-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Sluice write path: git CLI runner with console echo"
+
+[dependencies]
+sluice-core.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tracing.workspace = true

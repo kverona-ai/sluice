@@ -1,0 +1,20 @@
+[package]
+name = "sluice-ui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Sluice UI: GPUI views (theme tokens, shell, Log workspace)"
+
+[dependencies]
+sluice-core.workspace = true
+sluice-domain.workspace = true
+sluice-graph.workspace = true
+gpui.workspace = true
+gpui-component.workspace = true
+anyhow.workspace = true
+chrono.workspace = true
+rust-embed.workspace = true
+tracing.workspace = true

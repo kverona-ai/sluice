@@ -1,0 +1,19 @@
+[package]
+name = "sluice-backend-gix"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Sluice read path: gix-based repository reading (refs, log, status, diff)"
+
+[dependencies]
+sluice-core.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+gix.workspace = true
+imara-diff.workspace = true
+chrono.workspace = true
+bstr.workspace = true
+tracing.workspace = true

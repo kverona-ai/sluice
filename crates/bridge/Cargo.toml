@@ -1,0 +1,16 @@
+[package]
+name = "sluice-bridge"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Sluice bridge: MCP server, AI tool hooks and session provenance"
+
+[dependencies]
+sluice-core.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

@@ -1,0 +1,18 @@
+[package]
+name = "sluice-domain"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Sluice domain layer: RepoStore state machine, commands and serializable events"
+
+[dependencies]
+sluice-core.workspace = true
+sluice-backend-gix.workspace = true
+sluice-graph.workspace = true
+anyhow.workspace = true
+serde.workspace = true
+parking_lot.workspace = true
+tracing.workspace = true

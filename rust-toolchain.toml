@@ -1,0 +1,5 @@
+# Pinned toolchain for reproducible builds (05 §9.1). Bump deliberately, in its own commit.
+[toolchain]
+channel = "1.97.1"
+components = ["rustfmt", "clippy"]
+profile = "minimal"
