@@ -6,6 +6,16 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- M1 / M2: file watcher with debounced refresh; live search (text / regex / case), author & date
+  filters, AI-only, sort toggle; per-file diffs (side-by-side / unified, word-level highlights,
+  whitespace, context, hunk navigation); Local Changes tree with file / hunk / line staging,
+  commit panel (Amend / Sign-off / Author / no-verify), Commit & Push, pull / push; AI commit
+  message drafts via the installed CLI; Console tab; selection history; sidebar toggle; tooltips,
+  hover / focus states, bold / fill icons for small sizes.
+- `sluice-core::diff` engine (hunks, word diff, side-by-side pairing, partial patch) and
+  `Console`; `GitReader::blob`; working-tree status types.
+- `sluice-backend-cli`: git runner with login-shell PATH resolution and porcelain-v2 status parser.
+- `sluice-watch`: notify-based watcher.
 - Cargo workspace laid out per sluice-doc 02 §1: `core`, `backend-gix`, `backend-cli`, `domain`, `graph`,
   `watch`, `bridge`, `ui`, `app` (the `sluice` binary).
 - `sluice-core`: VCS-neutral types, `GitReader` trait, backend `Capabilities`, agent detection heuristics.
