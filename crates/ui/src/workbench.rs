@@ -60,6 +60,7 @@ actions!(
         OpenPathFilter,
         OpenMessageHistory,
         OpenWorktrees,
+        ToggleConsoleDock,
         OpenFileHistory,
         OpenBlame,
         OpenAiConnect,
@@ -187,6 +188,9 @@ pub struct Workbench {
     pub worktree_branch: Entity<InputState>,
     pub settings: crate::recent::Settings,
     pub update_available: Option<(String, String)>,
+    pub log_split: Entity<gpui_component::resizable::ResizableState>,
+    pub changes_split: Entity<gpui_component::resizable::ResizableState>,
+    pub dock_split: Entity<gpui_component::resizable::ResizableState>,
     pub update_checked: bool,
     pub fetch_busy: bool,
     pub rebase_msg: Entity<InputState>,
@@ -237,6 +241,9 @@ impl Workbench {
         .detach();
         let worktree_branch =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr("新分支名（如 feat/agent-2）")));
+        let log_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
+        let changes_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
+        let dock_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
         let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder(tr("新的提交信息")));
         cx.subscribe(&rebase_msg, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
@@ -342,6 +349,9 @@ impl Workbench {
             worktree_branch,
             settings: settings.clone(),
             update_available: None,
+            log_split,
+            changes_split,
+            dock_split,
             update_checked: false,
             fetch_busy: false,
             rebase_msg,
@@ -489,6 +499,35 @@ impl Workbench {
                 "Language: English"
             } else {
                 "语言：中文"
+            },
+            cx,
+        );
+        cx.notify();
+    }
+
+    pub fn remember_log_widths(&mut self, sizes: &[gpui::Pixels]) {
+        // With the sidebar hidden the first panel is the center.
+        if self.sidebar_hidden {
+            if let Some(d) = sizes.get(1) {
+                self.settings.log_widths[1] = f32::from(*d);
+            }
+        } else if sizes.len() >= 3 {
+            self.settings.log_widths = [f32::from(sizes[0]), f32::from(sizes[2])];
+        }
+        self.save_settings();
+    }
+
+    pub fn toggle_console_dock(&mut self, cx: &mut Context<Self>) {
+        self.settings.console_docked = !self.settings.console_docked;
+        if self.settings.console_docked && self.tab == Tab::Console {
+            self.tab = Tab::Log;
+        }
+        self.save_settings();
+        self.toast(
+            if self.settings.console_docked {
+                tr("Console 已拆分到底部")
+            } else {
+                tr("Console 已并回页签")
             },
             cx,
         );
@@ -1562,6 +1601,7 @@ impl Render for Workbench {
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &OpenWorktrees, _, cx| this.open_worktrees(cx)))
+            .on_action(cx.listener(|this, _: &ToggleConsoleDock, _, cx| this.toggle_console_dock(cx)))
             .on_action(cx.listener(|this, _: &OpenMessageHistory, _, cx| {
                 this.tab = Tab::Changes;
                 this.popup = Some((Popup::Messages, gpui::point(px(60.), px(420.))));
@@ -1606,14 +1646,41 @@ impl Render for Workbench {
             .text_size(px(13.))
             .child(self.render_titlebar(cx))
             .children(self.render_win_menu(cx))
-            .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(self.render_rail(cx))
-                    .child(body),
-            )
+            .child(div().flex_1().min_h_0().flex().child(self.render_rail(cx)).child(
+                if self.settings.console_docked && self.tab != Tab::Console {
+                    let console = self.render_console(cx).into_any_element();
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .min_h_0()
+                        .flex()
+                        .child(
+                            gpui_component::resizable::v_resizable("dock-split")
+                                .with_state(&self.dock_split.clone())
+                                .on_resize(cx.listener(
+                                    |this,
+                                     st: &gpui::Entity<gpui_component::resizable::ResizableState>,
+                                     _,
+                                     cx| {
+                                        if let Some(h) = st.read(cx).sizes().get(1) {
+                                            this.settings.console_h = f32::from(*h);
+                                            this.save_settings();
+                                        }
+                                    },
+                                ))
+                                .child(gpui_component::resizable::resizable_panel().child(body))
+                                .child(
+                                    gpui_component::resizable::resizable_panel()
+                                        .size(px(self.settings.console_h))
+                                        .size_range(px(120.)..px(600.))
+                                        .child(console),
+                                ),
+                        )
+                        .into_any_element()
+                } else {
+                    body
+                },
+            ))
             .children(self.render_toast())
             .children(self.render_popup(cx))
             .children(self.render_overlay(window, cx))

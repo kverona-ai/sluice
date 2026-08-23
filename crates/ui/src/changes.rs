@@ -517,12 +517,23 @@ impl Workbench {
             .flex_col()
             .children(banner)
             .child(
-                div()
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .child(self.render_change_tree(window, cx))
-                    .child(right),
+                gpui_component::resizable::h_resizable("changes-split")
+                    .with_state(&self.changes_split.clone())
+                    .on_resize(cx.listener(
+                        |this, st: &gpui::Entity<gpui_component::resizable::ResizableState>, _, cx| {
+                            if let Some(w) = st.read(cx).sizes().first() {
+                                this.settings.changes_tree_w = f32::from(*w);
+                                this.save_settings();
+                            }
+                        },
+                    ))
+                    .child(
+                        gpui_component::resizable::resizable_panel()
+                            .size(px(self.settings.changes_tree_w))
+                            .size_range(px(260.)..px(720.))
+                            .child(self.render_change_tree(window, cx)),
+                    )
+                    .child(gpui_component::resizable::resizable_panel().child(right)),
             )
     }
 
@@ -893,8 +904,7 @@ impl Workbench {
             .child(div().ml_auto().child(tf!("{} / {} 已暂存", staged_n, total_n)));
 
         div()
-            .w(px(396.))
-            .flex_none()
+            .size_full()
             .border_r_1()
             .border_color(t.line)
             .flex()

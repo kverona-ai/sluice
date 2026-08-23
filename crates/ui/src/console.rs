@@ -114,6 +114,20 @@ impl Workbench {
                         cx.notify();
                     }))
                     .child(tr("清空")),
+            )
+            .child(
+                div()
+                    .id("c-dock")
+                    .ml(px(10.))
+                    .cursor_pointer()
+                    .text_size(px(12.))
+                    .text_color(t.cyan_deep)
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_console_dock(cx)))
+                    .child(if self.settings.console_docked {
+                        tr("并回页签")
+                    } else {
+                        tr("拆分到底部")
+                    }),
             );
 
         let mut list = div()

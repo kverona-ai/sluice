@@ -60,14 +60,35 @@ impl Workbench {
         };
         let sidebar: Option<gpui::AnyElement> =
             (!self.sidebar_hidden).then(|| self.render_refs_sidebar(cx).into_any_element());
-        div()
-            .flex_1()
-            .min_w_0()
-            .min_h_0()
-            .flex()
-            .children(sidebar)
-            .child(center)
-            .child(self.render_details(cx))
+        let details = self.render_details(cx).into_any_element();
+        // Dock-style split: every pane is resizable by dragging the handles (sizes persisted).
+        let widths = self.settings.log_widths;
+        let state = self.log_split.clone();
+        let mut group = gpui_component::resizable::h_resizable("log-split")
+            .with_state(&state)
+            .on_resize(cx.listener(
+                |this, st: &gpui::Entity<gpui_component::resizable::ResizableState>, _, cx| {
+                    let sizes = st.read(cx).sizes().clone();
+                    this.remember_log_widths(&sizes);
+                },
+            ));
+        if let Some(sb) = sidebar {
+            group = group.child(
+                gpui_component::resizable::resizable_panel()
+                    .size(px(widths[0]))
+                    .size_range(px(170.)..px(520.))
+                    .child(sb),
+            );
+        }
+        group = group
+            .child(gpui_component::resizable::resizable_panel().child(center))
+            .child(
+                gpui_component::resizable::resizable_panel()
+                    .size(px(widths[1]))
+                    .size_range(px(260.)..px(720.))
+                    .child(details),
+            );
+        div().flex_1().min_w_0().min_h_0().flex().child(group)
     }
 
     // ----- refs sidebar ----------------------------------------------------
@@ -232,8 +253,7 @@ impl Workbench {
         }
 
         div()
-            .w(px(246.))
-            .flex_none()
+            .size_full()
             .flex()
             .flex_col()
             .min_h_0()
@@ -1042,8 +1062,7 @@ impl Workbench {
         let t = self.theme;
         let mut panel = div()
             .id("details")
-            .w(px(356.))
-            .flex_none()
+            .size_full()
             .border_l_1()
             .border_color(t.line)
             .overflow_y_scroll()

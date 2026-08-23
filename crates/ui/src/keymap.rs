@@ -300,6 +300,12 @@ pub const IDEA: &[Entry] = &[
         keys: &["cmd-shift-w", "ctrl-shift-w"],
         nav: false,
     },
+    Entry {
+        action: "ToggleConsoleDock",
+        label: "Console 拆分到底部 / 并回",
+        keys: &["cmd-alt-6", "ctrl-alt-6"],
+        nav: false,
+    },
 ];
 
 /// VS Code preset: only the differences from IDEA.
@@ -395,6 +401,7 @@ fn make(action: &str, keys: &str, nav: bool) -> Option<KeyBinding> {
         "OpenPathFilter" => KeyBinding::new(keys, crate::workbench::OpenPathFilter, ctx),
         "OpenMessageHistory" => KeyBinding::new(keys, crate::workbench::OpenMessageHistory, ctx),
         "OpenWorktrees" => KeyBinding::new(keys, crate::workbench::OpenWorktrees, ctx),
+        "ToggleConsoleDock" => KeyBinding::new(keys, crate::workbench::ToggleConsoleDock, ctx),
         _ => return None,
     })
 }

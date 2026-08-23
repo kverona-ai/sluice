@@ -291,6 +291,12 @@ pub struct Settings {
     pub check_updates: bool,
     /// Telemetry endpoint (empty = queue locally only).
     pub telemetry_endpoint: String,
+    /// Log split widths: [refs sidebar, details].
+    pub log_widths: [f32; 2],
+    pub changes_tree_w: f32,
+    /// Console docked at the bottom (split view) instead of a tab.
+    pub console_docked: bool,
+    pub console_h: f32,
 }
 
 impl Default for Settings {
@@ -304,6 +310,10 @@ impl Default for Settings {
             keymap: "idea".into(),
             check_updates: true,
             telemetry_endpoint: String::new(),
+            log_widths: [246.0, 356.0],
+            changes_tree_w: 396.0,
+            console_docked: false,
+            console_h: 220.0,
         }
     }
 }
