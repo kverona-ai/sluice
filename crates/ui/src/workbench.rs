@@ -55,6 +55,7 @@ actions!(
         ToggleTheme,
         OpenUserFilter,
         OpenDateFilter,
+        OpenPathFilter,
         OpenFileHistory,
         OpenBlame,
         OpenAiConnect,
@@ -97,6 +98,7 @@ impl Tab {
 pub enum Popup {
     Users,
     Date,
+    Paths,
 }
 
 /// Which working-tree file the Changes tab is showing.
@@ -174,6 +176,9 @@ pub struct Workbench {
     pub recent: Vec<crate::recent::RecentRepo>,
     pub rebase: Option<crate::rebase::RebaseDraft>,
     pub conflict: Option<crate::conflict::ConflictView>,
+    pub paths_input: Entity<InputState>,
+    pub settings: crate::recent::Settings,
+    pub fetch_busy: bool,
     pub rebase_msg: Entity<InputState>,
     pub provenance_cache: Option<(Oid, Vec<sluice_bridge::provenance::SessionMatch>)>,
     pub pending_askpass_prompt: Option<(String, std::sync::mpsc::Sender<Option<String>>)>,
@@ -203,6 +208,18 @@ impl Workbench {
         let branch_filter = cx.new(|cx| InputState::new(window, cx).placeholder("搜索分支 / 标签"));
         let new_branch_name = cx.new(|cx| InputState::new(window, cx).placeholder("feat/my-branch"));
         let stash_msg = cx.new(|cx| InputState::new(window, cx).placeholder("stash 说明（可选）"));
+        let paths_input = cx.new(|cx| InputState::new(window, cx).placeholder("src/ 或 README.md"));
+        cx.subscribe(&paths_input, |this, _, ev: &InputEvent, cx| {
+            if matches!(ev, InputEvent::PressEnter { .. }) {
+                let text = this.paths_input.read(cx).value().trim().to_string();
+                if !text.is_empty() && !this.filter.paths.contains(&text) {
+                    this.filter.paths.push(text);
+                    this.recompute_path_filter(cx);
+                }
+            }
+        })
+        .detach();
+        let settings = crate::recent::load_settings();
         let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder("新的提交信息"));
         cx.subscribe(&rebase_msg, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
@@ -303,6 +320,9 @@ impl Workbench {
             recent: Vec::new(),
             rebase: None,
             conflict: None,
+            paths_input,
+            settings: settings.clone(),
+            fetch_busy: false,
             rebase_msg,
             provenance_cache: None,
             pending_askpass_prompt: None,
@@ -313,10 +333,101 @@ impl Workbench {
             _watch_task: None,
             load_gen: 0,
         };
+        // Apply persisted settings.
+        if this.settings.dark {
+            this.theme = Theme::dark();
+            crate::sync_component_theme(cx, &this.theme);
+        }
+        this.telemetry = this.settings.telemetry;
+        this.rail_expanded = this.settings.rail_expanded;
         this.start_watcher(cx);
         this.reload_log(cx);
         this.reload_changes(cx);
+        this.start_background_fetch(cx);
         this
+    }
+
+    pub fn save_settings(&mut self) {
+        self.settings.dark = self.theme.is_dark;
+        self.settings.telemetry = self.telemetry;
+        self.settings.rail_expanded = self.rail_expanded;
+        crate::recent::save_settings(&self.settings);
+    }
+
+    /// Recompute the commit id set for the Paths filter (`git log -- <paths>`) off-thread.
+    pub fn recompute_path_filter(&mut self, cx: &mut Context<Self>) {
+        self.popup = self.popup.filter(|(p, _)| *p == Popup::Paths);
+        let paths = self.filter.paths.clone();
+        if paths.is_empty() {
+            self.filter.path_ids = None;
+            self.apply_filter(cx);
+            return;
+        }
+        let Some(cli) = self.repo.cli.clone() else { return };
+        cx.spawn(async move |this, cx| {
+            let res = cx
+                .background_spawn(async move {
+                    let mut args: Vec<String> = vec!["log".into(), "--format=%H".into(), "--".into()];
+                    args.extend(paths.iter().cloned());
+                    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+                    let out = cli.run_read(&refs)?;
+                    let set: std::collections::HashSet<Oid> =
+                        out.stdout_str().lines().map(|l| Oid::new(l.trim())).collect();
+                    anyhow::Ok(set)
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                match res {
+                    Ok(set) => this.filter.path_ids = Some(set),
+                    Err(e) => this.toast(format!("路径过滤失败：{e:#}"), cx),
+                }
+                this.apply_filter(cx);
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Periodic `git fetch --prune` (05 §4 background fetch); interval from settings.
+    pub fn start_background_fetch(&mut self, cx: &mut Context<Self>) {
+        let minutes = self.settings.fetch_minutes;
+        if minutes == 0 {
+            return;
+        }
+        let Some(cli) = self.repo.cli.clone() else { return };
+        if self.repo.info.head.upstream.is_none() {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(std::time::Duration::from_secs(minutes as u64 * 60))
+                    .await;
+                let still = this
+                    .update(cx, |this, _| !this.fetch_busy && !this.commit_busy)
+                    .unwrap_or(false);
+                if !still {
+                    continue;
+                }
+                this.update(cx, |this, _| this.fetch_busy = true).ok();
+                let cli2 = cli.clone();
+                let res = cx.background_spawn(async move { cli2.fetch(None, true) }).await;
+                if this
+                    .update(cx, |this, cx| {
+                        this.fetch_busy = false;
+                        if let Err(e) = res {
+                            tracing::debug!("background fetch: {e:#}");
+                        } else {
+                            this.refresh(cx);
+                        }
+                    })
+                    .is_err()
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
     }
 
     // ----- helpers -----------------------------------------------------------
@@ -1284,6 +1395,13 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenUserFilter, _, cx| {
                 this.tab = Tab::Log;
                 this.popup = Some((Popup::Users, gpui::point(px(620.), px(64.))));
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &OpenPathFilter, window, cx| {
+                this.tab = Tab::Log;
+                this.popup = Some((Popup::Paths, gpui::point(px(730.), px(64.))));
+                let fh = gpui::Focusable::focus_handle(this.paths_input.read(cx), cx);
+                window.focus(&fh);
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &OpenDateFilter, _, cx| {

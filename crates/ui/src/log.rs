@@ -414,10 +414,24 @@ impl Workbench {
                 div()
                     .id("f-paths")
                     .cursor_pointer()
-                    .on_click(
-                        cx.listener(|this, _, _, cx| this.not_yet("Paths 路径过滤", "M1 后半（05 §4）", cx)),
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.popup = match this.popup {
+                                Some((Popup::Paths, _)) => None,
+                                _ => Some((Popup::Paths, ev.position)),
+                            };
+                            cx.notify();
+                        }),
                     )
-                    .child(chip(false, "Paths".into())),
+                    .child(chip(
+                        !self.filter.paths.is_empty(),
+                        if self.filter.paths.is_empty() {
+                            "Paths".into()
+                        } else {
+                            format!("Paths · {}", self.filter.paths.len())
+                        },
+                    )),
             )
             .child(
                 div()
@@ -608,6 +622,85 @@ impl Workbench {
                                     .child(format!("{n_commits}")),
                             )
                     }));
+            }
+            Popup::Paths => {
+                let paths = self.filter.paths.clone();
+                panel = panel
+                    .child(
+                        div()
+                            .px(px(12.))
+                            .py(px(5.))
+                            .border_b_1()
+                            .border_color(t.line_soft)
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(t.faint)
+                                    .child("按路径过滤 · 输入路径或前缀，Enter 添加（git log -- <path>）"),
+                            ),
+                    )
+                    .child(
+                        div().px(px(10.)).py(px(6.)).child(
+                            div()
+                                .border_1()
+                                .border_color(t.cyan)
+                                .bg(t.surface)
+                                .rounded(px(6.))
+                                .px(px(8.))
+                                .py(px(2.))
+                                .text_size(px(12.))
+                                .child(
+                                    gpui_component::input::Input::new(&self.paths_input).appearance(false),
+                                ),
+                        ),
+                    )
+                    .children(paths.iter().enumerate().map(|(i, p)| {
+                        let p2 = p.clone();
+                        div()
+                            .id(("path-row", i))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .py(px(3.))
+                            .rounded(px(6.))
+                            .font_family(FONT_MONO)
+                            .text_size(px(11.5))
+                            .hover(move |st| st.bg(t.ink_05))
+                            .child(div().flex_1().min_w_0().truncate().child(p.clone()))
+                            .child(
+                                div()
+                                    .id(("path-x", i))
+                                    .cursor_pointer()
+                                    .text_color(t.faint)
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.filter.paths.retain(|x| x != &p2);
+                                        this.recompute_path_filter(cx);
+                                    }))
+                                    .child("×"),
+                            )
+                    }))
+                    .when(!paths.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .id("paths-clear")
+                                .mx(px(8.))
+                                .my(px(4.))
+                                .px(px(8.))
+                                .py(px(2.))
+                                .rounded(px(4.))
+                                .text_size(px(11.5))
+                                .text_color(t.cyan_deep)
+                                .cursor_pointer()
+                                .hover(move |st| st.bg(t.cyan_16))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.filter.paths.clear();
+                                    this.recompute_path_filter(cx);
+                                }))
+                                .child("清除全部"),
+                        )
+                    });
             }
             Popup::Date => {
                 let current = self.filter.date;

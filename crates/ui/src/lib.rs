@@ -101,6 +101,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-alt-b", workbench::OpenBlame, ctx),
         KeyBinding::new("ctrl-u", workbench::OpenUserFilter, ctx),
         KeyBinding::new("cmd-alt-d", workbench::OpenDateFilter, ctx),
+        KeyBinding::new("cmd-alt-p", workbench::OpenPathFilter, ctx),
+        KeyBinding::new("ctrl-alt-p", workbench::OpenPathFilter, ctx),
         KeyBinding::new("ctrl-alt-d", workbench::OpenDateFilter, ctx),
         KeyBinding::new("ctrl-shift-t", workbench::ToggleTheme, ctx),
         KeyBinding::new("ctrl-shift-k", workbench::OpenPush, ctx),

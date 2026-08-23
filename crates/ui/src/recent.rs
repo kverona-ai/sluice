@@ -272,3 +272,45 @@ impl Workbench {
             )
     }
 }
+
+/// Persisted user settings (`~/.sluice/settings.json`).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Settings {
+    pub dark: bool,
+    pub telemetry: bool,
+    /// Background `git fetch` every `fetch_minutes` (0 = off).
+    pub fetch_minutes: u32,
+    pub rail_expanded: bool,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            dark: false,
+            telemetry: false,
+            fetch_minutes: 5,
+            rail_expanded: false,
+        }
+    }
+}
+
+fn settings_path() -> PathBuf {
+    store().with_file_name("settings.json")
+}
+
+pub fn load_settings() -> Settings {
+    std::fs::read_to_string(settings_path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+pub fn save_settings(s: &Settings) {
+    if let Some(parent) = settings_path().parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(s) {
+        let _ = std::fs::write(settings_path(), text);
+    }
+}

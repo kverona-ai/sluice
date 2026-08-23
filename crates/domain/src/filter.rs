@@ -59,6 +59,10 @@ pub struct LogFilter {
     pub authors: BTreeSet<String>,
     pub date: DateFilter,
     pub ai_only: bool,
+    /// Path prefixes (UI-provided); matching commits are precomputed into `path_ids`
+    /// by `git log -- <paths>` because commit file lists are not part of the snapshot.
+    pub paths: Vec<String>,
+    pub path_ids: Option<std::collections::HashSet<sluice_core::Oid>>,
 }
 
 impl LogFilter {
@@ -67,6 +71,7 @@ impl LogFilter {
             || !self.authors.is_empty()
             || self.date != DateFilter::Any
             || self.ai_only
+            || !self.paths.is_empty()
     }
 
     /// Indices of commits that pass the filter (all indices when inactive).
@@ -95,6 +100,9 @@ impl LogFilter {
             .enumerate()
             .filter(|(_, c)| {
                 if self.ai_only && !c.agent.is_ai() {
+                    return false;
+                }
+                if !self.paths.is_empty() && !self.path_ids.as_ref().is_some_and(|ids| ids.contains(&c.id)) {
                     return false;
                 }
                 if !self.authors.is_empty() && !self.authors.contains(&c.author.name) {

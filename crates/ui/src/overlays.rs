@@ -119,6 +119,7 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("文件历史（选中文件）", "⌘⇧H", "Ctrl+Shift+H"),
     ("Blame（选中文件）", "⌥⌘B", "Ctrl+Alt+B"),
     ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
+    ("路径过滤（git log -- path）", "⌥⌘P", "Ctrl+Alt+P"),
     ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
     ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
     ("待确认队列（AI 提议）", "⌘⇧P", "Ctrl+Shift+P"),
@@ -1553,9 +1554,10 @@ impl Workbench {
                                     .cursor_pointer()
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.telemetry = !this.telemetry;
+                                        this.save_settings();
                                         this.toast(
                                             if this.telemetry {
-                                                "遥测已开启（本会话内存开关；持久化与上报端点随 M4 提供）"
+                                                "遥测已开启（已持久化；上报端点随 public beta 启用）"
                                             } else {
                                                 "遥测已关闭（默认状态）"
                                             },
