@@ -57,6 +57,7 @@ actions!(
         OpenDateFilter,
         OpenFileHistory,
         OpenBlame,
+        OpenAiConnect,
         StageAll,
         UnstageAll,
         ToggleSelected,
@@ -154,6 +155,9 @@ pub struct Workbench {
     pub push_lease: bool,
     pub push_upstream: bool,
     pub telemetry: bool,
+    pub ai_status: Vec<sluice_bridge::connect::ToolStatus>,
+    pub ai_report: Option<String>,
+    pub ai_busy_connect: bool,
     /// Selection history for the ◀ ▶ title-bar buttons (commit ids).
     pub history: Vec<Oid>,
     pub history_ix: usize,
@@ -254,6 +258,9 @@ impl Workbench {
             push_lease: false,
             push_upstream: false,
             telemetry: false,
+            ai_status: Vec::new(),
+            ai_report: None,
+            ai_busy_connect: false,
             history: Vec::new(),
             history_ix: 0,
             _watcher: None,
@@ -495,6 +502,11 @@ impl Workbench {
             self.tab = Tab::Log;
             cx.notify();
         }
+    }
+
+    /// Record an app-level note in the Console (not a git command).
+    pub fn console_note(&mut self, what: &str, detail: &str) {
+        self.repo.console.note(what, detail);
     }
 
     /// Keyboard entry for file history / blame: acts on the file currently open or
@@ -853,10 +865,8 @@ impl Workbench {
                             .items_center()
                             .gap(px(2.))
                             .child(
-                                chrome_button("tb-ai", &t, "sparkle", "AI 工具接入向导（M4）", false)
-                                    .on_click(cx.listener(|this, _, _, cx| {
-                                        this.not_yet("AI 零配置接入向导", "M4（03 §2）", cx)
-                                    })),
+                                chrome_button("tb-ai", &t, "sparkle", "AI 工具接入（一键 MCP）", false)
+                                    .on_click(cx.listener(|this, _, _, cx| this.open_ai_connect(cx))),
                             )
                             .child(
                                 chrome_button("tb-refresh", &t, "arrow-clockwise", "刷新 ⌥⌘Y", false)
@@ -1125,6 +1135,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
             .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
+            .on_action(cx.listener(|this, _: &OpenAiConnect, _, cx| this.open_ai_connect(cx)))
             .on_action(cx.listener(|this, _: &OpenFileHistory, _, cx| {
                 this.file_action(crate::file_view::FileViewMode::History, cx)
             }))

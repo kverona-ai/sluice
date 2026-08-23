@@ -10,7 +10,7 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 [![License](https://img.shields.io/badge/License-Apache--2.0-3b5bdb.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.97-dea584?logo=rust&logoColor=white)](rust-toolchain.toml)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-2f9e44)](#安装)
-[![Status](https://img.shields.io/badge/status-early%20preview-e8590c)](#路线图)
+[![Status](https://img.shields.io/badge/status-M3%20%2F%20M4%20in%20progress-e8590c)](#路线图)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-d6006c.svg)](#参与贡献)
 
 [English](./README.md) · **简体中文**
@@ -43,10 +43,13 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 | **行级暂存** | 每个块、每一行都有复选框；补丁经 `git apply --cached` 应用并回显到 Console |
 | **提交面板** | Amend / Sign-off / Author 覆盖 / 跳过 hooks、Commit & Push |
 | **AI 提交信息** | 由本机已装 CLI 起草——Claude Code、Codex CLI、Grok Build、DeepSeek Harness、Gemini CLI、Kimi Code、Z Code、Qwen Code、opencode、GitHub Copilot CLI——自动探测、零密钥 |
+| **一键接入 AI 工具** | `⌘⇧I` 或 `sluice ai connect`：把 Sluice 的只读 MCP server 注册进每个已装 AI CLI（优先用工具自己的 `mcp add`，没有命令的工具则带备份地写配置文件） |
+| **文件历史与 Blame** | 逐文件 `git log --follow` 可跳转到提交；blame 按提交分带的槽、悬停高亮整个提交（`⌘⇧H` / `⌥⌘B`，或右键任意文件） |
+| **分支 / Stash / 时光机** | 分支面板 checkout · merge · rebase · 删除 · 新建；stash push/apply/pop/drop；丢弃 / reset --hard 前自动安全快照 |
 | **代理溯源** | 每条提交归因到产生它的代理（当前基于 trailer 分析，确定性会话溯源在路线图上） |
 | **实时刷新** | 工作区 + `.git` 监听；代理的任何动作约 200ms 内可见 |
 | **Console** | 每条 git 命令的耗时、退出码、stderr；详细模式连读路径也可见 |
-| **键盘优先** | IDEA 风格键位：`⌘9` 日志 · `⌘0` 变更 · `⌘K` 提交面板 · `⌘↩` 提交 · `Space` 暂存 |
+| **键盘优先** | IDEA 风格键位：`⌘9` 日志 · `⌘0` 变更 · `⌘B` 分支 · `⌘5` stash · `⌘K` 提交面板 · `⌘↩` 提交 · `Space` 暂存；完整列表见设置（`⌘,`） |
 
 ## 技术栈
 
@@ -112,6 +115,9 @@ cargo build --release -p sluice          # → target\release\sluice.exe
 cargo install --path crates/app
 sluice open .                            # 打开当前仓库
 sluice log .                             # 提交图文本导出（SSH 场景好用）
+sluice ai status                         # 哪些 AI CLI 已安装 / 已接入
+sluice ai connect                        # 把 Sluice 注册为它们的 MCP server
+sluice mcp serve                         # stdio MCP server 本体（各工具实际启动的就是它）
 ```
 
 预编译的签名安装包（GitHub Releases、Homebrew、winget）将随首个 public beta 发布——在那之前，从源码构建是受支持的方式。想立即体验，可以用生成的演示仓库：
@@ -129,9 +135,9 @@ IDEA 风格预设（Windows/Linux 用 `Ctrl` 代替 `⌘`）：`↑/↓/PgUp/PgD
 ## 路线图
 
 - ✅ **M1 —— 审查**：提交图、refs、过滤、diff、详情、实时监听
-- 🔨 **M2 —— 提交**（当前）：行级暂存、提交面板、AI 起草、推拉
-- ⏭ **M3 —— 分支**：分支面板、merge / 交互式 rebase、stash、三方冲突、快照时光机
-- ⏭ **M4 —— AI 桥接**：内置 MCP server、一键接入代理、会话溯源、提议-确认队列 → 首个 public beta
+- ✅ **M2 —— 提交**：行级暂存、提交面板、AI 起草、推拉
+- 🔨 **M3 —— 分支**（当前）：分支面板、merge / rebase、stash、快照、文件历史与 blame 已完成；交互式 rebase 界面与三方合并器接下来
+- 🔨 **M4 —— AI 桥接**（已开始）：只读 MCP server 与一键接入已完成；会话溯源与提议-确认队列接下来 → 首个 public beta
 - ⏭ **M5 —— 移动伴侣**：iOS / Android 上审查与放行，复用同一 Rust 核心
 - ⏭ **M6 —— 扩展**：GitHub / GitLab PR 评审、jujutsu (jj) 后端
 

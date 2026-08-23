@@ -54,6 +54,8 @@ clap = { version = "4", features = ["derive"] }
 notify = "8"
 async-channel = "2"
 regex = "1"
+toml_edit = "0.22"
+dirs = "6"
 which = "7"
 tempfile = "3"
 rust-embed = "8"

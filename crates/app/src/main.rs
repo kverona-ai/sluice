@@ -46,6 +46,11 @@ enum Command {
         #[command(subcommand)]
         cmd: McpCommand,
     },
+    /// AI tool hookup: detect installed AI CLIs and register Sluice as their MCP server (03 §2).
+    Ai {
+        #[command(subcommand)]
+        cmd: AiCommand,
+    },
     /// Receive an AI tool hook event on stdin and forward it to the running app (M4, 03 §2).
     Hook { tool: String },
     /// GIT_ASKPASS / SSH_ASKPASS helper (M2, 05 §3).
@@ -56,6 +61,22 @@ enum Command {
     SeqEditor { file: Option<PathBuf> },
     /// Export a diagnostics bundle (05 §9.2).
     Diagnostics,
+}
+
+#[derive(Subcommand, Debug)]
+enum AiCommand {
+    /// Show which AI CLIs are installed and whether Sluice is registered in each.
+    Status,
+    /// Register Sluice as an MCP server (all installed tools, or one with --tool).
+    Connect {
+        #[arg(long)]
+        tool: Option<String>,
+    },
+    /// Remove the Sluice MCP entry from one tool's configuration.
+    Disconnect {
+        #[arg(long)]
+        tool: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -85,11 +106,70 @@ fn main() -> Result<()> {
             let path = resolve_path(repo.or(cli.path))?;
             sluice_bridge::mcp::McpServer::new(path).serve()
         }
+        Some(Command::Ai { cmd }) => run_ai(cmd),
         Some(Command::Hook { tool }) => not_yet(&format!("sluice hook {tool}"), "M4 — 03 §2"),
         Some(Command::Askpass { .. }) => not_yet("sluice askpass", "M2 — 05 §3"),
         Some(Command::Editor { .. }) => not_yet("sluice editor", "M3 — 05 §6"),
         Some(Command::SeqEditor { .. }) => not_yet("sluice seq-editor", "M3 — 05 §6"),
         Some(Command::Diagnostics) => not_yet("sluice diagnostics", "M1 — 05 §9.2"),
+    }
+}
+
+fn run_ai(cmd: AiCommand) -> Result<()> {
+    use sluice_bridge::connect::{self, Registration};
+    match cmd {
+        AiCommand::Status => {
+            let (c, a) = connect::server_command();
+            println!("server command: {c} {}", a.join(" "));
+            for st in connect::status_all() {
+                let state = match &st.state {
+                    Registration::NotInstalled => "not installed".to_string(),
+                    Registration::Installed => "installed, not registered".to_string(),
+                    Registration::Registered(cmd) => format!("registered -> {cmd}"),
+                };
+                println!("{:<14} {:<28} {}", st.id, state, st.config_path.display());
+            }
+            Ok(())
+        }
+        AiCommand::Connect { tool } => {
+            let targets: Vec<&connect::ToolSpec> = connect::TOOLS
+                .iter()
+                .filter(|t| tool.as_deref().is_none_or(|id| id == t.id))
+                .filter(|t| tool.is_some() || connect::status(t).state == Registration::Installed)
+                .collect();
+            if targets.is_empty() {
+                println!("nothing to do (use `sluice ai status`)");
+                return Ok(());
+            }
+            for spec in targets {
+                match connect::register(spec) {
+                    Ok(r) => println!(
+                        "ok   {} via {}{}{}",
+                        r.tool,
+                        r.method,
+                        r.backup
+                            .map(|b| format!(" (backup {})", b.display()))
+                            .unwrap_or_default(),
+                        match r.verified {
+                            Some(true) => ", verified",
+                            Some(false) => ", NOT verified",
+                            None => "",
+                        }
+                    ),
+                    Err(e) => println!("fail {} — {e:#}", spec.name),
+                }
+            }
+            Ok(())
+        }
+        AiCommand::Disconnect { tool } => {
+            let spec = connect::TOOLS
+                .iter()
+                .find(|t| t.id == tool)
+                .ok_or_else(|| anyhow::anyhow!("unknown tool {tool}"))?;
+            connect::unregister(spec)?;
+            println!("removed sluice from {}", spec.name);
+            Ok(())
+        }
     }
 }
 

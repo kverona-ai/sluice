@@ -10,7 +10,7 @@ AI agents write the code. You review, stage line by line, and open the gate.
 [![License](https://img.shields.io/badge/License-Apache--2.0-3b5bdb.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.97-dea584?logo=rust&logoColor=white)](rust-toolchain.toml)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-2f9e44)](#installation)
-[![Status](https://img.shields.io/badge/status-early%20preview-e8590c)](#roadmap)
+[![Status](https://img.shields.io/badge/status-M3%20%2F%20M4%20in%20progress-e8590c)](#roadmap)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-d6006c.svg)](#contributing)
 
 **English** · [简体中文](./README.zh-CN.md)
@@ -57,10 +57,13 @@ rebuilt for the agentic era:
 | **Line-level staging** | checkboxes on every hunk and line; the exact patch is applied with `git apply --cached` and echoed to the Console |
 | **Commit panel** | Amend / Sign-off / Author override / skip-hooks, Commit & Push, undo-friendly toasts |
 | **AI commit messages** | drafted by your installed CLI — Claude Code, Codex CLI, Grok Build, DeepSeek Harness, Gemini CLI, Kimi Code, Z Code, Qwen Code, opencode, GitHub Copilot CLI — auto-detected, zero keys |
+| **One-click AI hookup** | `⌘⇧I` or `sluice ai connect`: registers Sluice's read-only MCP server with every installed AI CLI (uses each tool's own `mcp add`, or a backed-up config edit where no command exists) |
+| **File history & blame** | `git log --follow` per file with jump-to-commit; blame with commit-banded gutter, hover to highlight a commit (`⌘⇧H` / `⌥⌘B`, or right-click any file) |
+| **Branches / stash / time machine** | branches panel with checkout · merge · rebase · delete · new; stash push/apply/pop/drop; automatic safety snapshots before discard / reset --hard |
 | **Agent provenance** | commits are attributed to the agent that made them (trailer analysis today, deterministic session tracking on the roadmap) |
 | **Live refresh** | worktree + `.git` watcher; anything an agent does shows up in ~200 ms |
 | **Console** | every git command with duration, exit code and stderr; verbose mode reveals the read path too |
-| **Keyboard-first** | IDEA-style keymap: `⌘9` Log · `⌘0` Changes · `⌘K` commit panel · `⌘↩` commit · `Space` stage · full list below |
+| **Keyboard-first** | IDEA-style keymap: `⌘9` Log · `⌘0` Changes · `⌘B` branches · `⌘5` stash · `⌘K` commit panel · `⌘↩` commit · `Space` stage · full list in Settings (`⌘,`) |
 
 ## Tech stack
 
@@ -127,6 +130,9 @@ cargo build --release -p sluice          # → target\release\sluice.exe
 cargo install --path crates/app
 sluice open .                            # open the current repository
 sluice log .                             # text dump of the graph (handy over SSH)
+sluice ai status                         # which AI CLIs are installed / hooked up
+sluice ai connect                        # register Sluice as MCP server in all of them
+sluice mcp serve                         # the stdio MCP server itself (what the tools launch)
 ```
 
 Pre-built, signed installers (GitHub Releases, Homebrew, winget) ship with the first public beta —
@@ -147,10 +153,11 @@ IDEA-style preset (`Ctrl` instead of `⌘` on Windows/Linux): `↑/↓/PgUp/PgDn
 ## Roadmap
 
 - ✅ **M1 — Review**: commit graph, refs, filters, diffs, details, live watcher
-- 🔨 **M2 — Commit** *(current)*: staging down to lines, commit panel, AI drafts, push/pull
-- ⏭ **M3 — Branches**: branch panel, merge / interactive rebase, stash, 3-way conflicts, snapshots
-- ⏭ **M4 — AI bridge**: built-in MCP server, one-click agent hookup, session provenance,
-  propose-and-confirm queue → first public beta
+- ✅ **M2 — Commit**: staging down to lines, commit panel, AI drafts, push/pull
+- 🔨 **M3 — Branches** *(current)*: branches panel, merge / rebase, stash, snapshots, file
+  history & blame done; interactive rebase UI and 3-way merge resolver next
+- 🔨 **M4 — AI bridge** *(started)*: read-only MCP server and one-click hookup done; session
+  provenance and the propose-and-confirm queue next → first public beta
 - ⏭ **M5 — Mobile companions**: review & approve from iOS / Android over the same Rust core
 - ⏭ **M6 — Extensions**: GitHub / GitLab PR review, jujutsu (jj) backend
 

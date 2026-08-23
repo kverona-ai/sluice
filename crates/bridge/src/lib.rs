@@ -4,4 +4,5 @@
 //! tools. Write *proposals*, hooks and the desktop-instance IPC arrive with
 //! the rest of M4; destructive operations will never get a tool (03 §3).
 
+pub mod connect;
 pub mod mcp;

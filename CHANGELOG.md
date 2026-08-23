@@ -6,6 +6,12 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **One-click AI hookup** (`⌘⇧I`, `sluice ai status|connect|disconnect`): detects installed
+  AI CLIs and registers the Sluice MCP server — via each tool's own `mcp add` (Claude Code,
+  Codex, Gemini, Qwen, Copilot, Grok Build) or a backed-up partial config edit (opencode,
+  Kimi Code, Z Code). Files the tools rewrite themselves (`~/.claude.json`, Grok's
+  `config.toml`) are never edited directly.
+- **File history & blame** views with jump-to-commit (`⌘⇧H` / `⌥⌘B`, context menus).
 - **Branches panel** (`⌘B` / `⌃⇧\``): searchable local + remote list, click-to-checkout,
   per-branch merge / rebase actions, delete with confirmation, new-branch dialog (also from any
   commit's context menu).

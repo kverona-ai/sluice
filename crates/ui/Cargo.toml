@@ -12,6 +12,7 @@ description = "Sluice UI: GPUI views (theme tokens, shell, Log workspace)"
 sluice-core.workspace = true
 sluice-domain.workspace = true
 sluice-backend-cli.workspace = true
+sluice-bridge.workspace = true
 sluice-watch.workspace = true
 sluice-graph.workspace = true
 gpui.workspace = true

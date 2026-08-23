@@ -69,6 +69,19 @@ impl Console {
     }
 
     /// Monotonic counter the UI can poll to know whether to re-render.
+    /// App-level AI/bridge note (not a git command), e.g. "ai connect".
+    pub fn note(&self, what: impl Into<String>, detail: impl Into<String>) {
+        self.log(ConsoleEntry {
+            at: Local::now(),
+            kind: ConsoleKind::Ai,
+            command: what.into(),
+            duration_ms: 0,
+            exit_code: Some(0),
+            summary: detail.into(),
+            stderr: String::new(),
+        });
+    }
+
     pub fn revision(&self) -> u64 {
         self.inner.lock().unwrap().revision
     }

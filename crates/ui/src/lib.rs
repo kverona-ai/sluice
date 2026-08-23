@@ -72,6 +72,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-shift-t", workbench::ToggleTheme, ctx),
         KeyBinding::new("cmd-u", workbench::OpenUserFilter, ctx),
         KeyBinding::new("cmd-shift-h", workbench::OpenFileHistory, ctx),
+        KeyBinding::new("cmd-shift-i", workbench::OpenAiConnect, ctx),
+        KeyBinding::new("ctrl-shift-i", workbench::OpenAiConnect, ctx),
         KeyBinding::new("ctrl-shift-h", workbench::OpenFileHistory, ctx),
         KeyBinding::new("cmd-alt-b", workbench::OpenBlame, ctx),
         KeyBinding::new("ctrl-alt-b", workbench::OpenBlame, ctx),

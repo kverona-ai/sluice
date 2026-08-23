@@ -18,6 +18,7 @@ use crate::workbench::{Tab, Workbench, checkbox, section_label};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Overlay {
+    AiConnect,
     Branches,
     Stash,
     Snapshots,
@@ -115,6 +116,7 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("Blame（选中文件）", "⌥⌘B", "Ctrl+Alt+B"),
     ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
     ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
+    ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
     ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
     ("提交", "⌘↩", "Ctrl+Enter"),
     ("全部暂存 / 取消暂存", "⌥⌘A / ⌥⌘U", "Ctrl+Alt+A / U"),
@@ -207,6 +209,260 @@ impl Workbench {
             return true;
         }
         false
+    }
+
+    // ----- AI connect wizard (M4, 03 §2) ------------------------------------
+
+    pub(crate) fn open_ai_connect(&mut self, cx: &mut Context<Self>) {
+        self.ai_status = sluice_bridge::connect::status_all();
+        self.ai_report = None;
+        self.overlay = Some(Overlay::AiConnect);
+        cx.notify();
+    }
+
+    fn ai_register(&mut self, ids: Vec<&'static str>, cx: &mut Context<Self>) {
+        self.ai_busy_connect = true;
+        cx.notify();
+        cx.spawn(async move |this, cx| {
+            let res = cx
+                .background_spawn(async move {
+                    let mut lines = Vec::new();
+                    for spec in sluice_bridge::connect::TOOLS
+                        .iter()
+                        .filter(|t| ids.contains(&t.id))
+                    {
+                        match sluice_bridge::connect::register(spec) {
+                            Ok(r) => lines.push(format!(
+                                "✓ {} — {}{}{}",
+                                r.tool,
+                                if r.method == "cli" {
+                                    "官方命令写入"
+                                } else {
+                                    "写入配置文件"
+                                },
+                                r.backup
+                                    .as_ref()
+                                    .map(|b| format!("（备份 {}）", b.display()))
+                                    .unwrap_or_default(),
+                                match r.verified {
+                                    Some(true) => "，已验证",
+                                    Some(false) => "，验证未通过（请手动 `mcp list` 检查）",
+                                    None => "",
+                                }
+                            )),
+                            Err(e) => lines.push(format!("✗ {} — {e:#}", spec.name)),
+                        }
+                    }
+                    lines
+                })
+                .await;
+            this.update(cx, |this, cx| {
+                this.ai_busy_connect = false;
+                this.ai_report = Some(res.join("\n"));
+                this.ai_status = sluice_bridge::connect::status_all();
+                this.console_note("ai connect", &this.ai_report.clone().unwrap_or_default());
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn render_ai_connect(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        use sluice_bridge::connect::Registration;
+        let t = self.theme;
+        let statuses = self.ai_status.clone();
+        let installed: Vec<&'static str> = statuses
+            .iter()
+            .filter(|s| s.state != Registration::NotInstalled)
+            .map(|s| s.id)
+            .collect();
+        let busy = self.ai_busy_connect;
+        let (cmd, args) = sluice_bridge::connect::server_command();
+        let mut rows = div().flex().flex_col().gap(px(2.)).px(px(8.));
+        for (i, st) in statuses.iter().enumerate() {
+            let (label, color) = match &st.state {
+                Registration::NotInstalled => ("未安装".to_string(), t.faint),
+                Registration::Installed => ("已安装 · 未接入".to_string(), t.muted),
+                Registration::Registered(c) => (format!("已接入 → {}", c), t.cyan_deep),
+            };
+            let id = st.id;
+            let can = st.state != Registration::NotInstalled;
+            let registered = matches!(st.state, Registration::Registered(_));
+            rows = rows.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(10.))
+                    .px(px(8.))
+                    .py(px(5.))
+                    .rounded(px(6.))
+                    .text_size(px(12.5))
+                    .hover(move |s| s.bg(t.ink_05))
+                    .child(crate::workbench::agent_badge(
+                        &t,
+                        match st.id {
+                            "claude-code" => Agent::ClaudeCode,
+                            "codex" => Agent::CodexCli,
+                            "grok-build" => Agent::GrokBuild,
+                            "gemini" => Agent::Gemini,
+                            "kimi" => Agent::KimiCode,
+                            "qwen" => Agent::QwenCode,
+                            "copilot" => Agent::Copilot,
+                            "zcode" => Agent::ZCode,
+                            _ => Agent::OtherAi,
+                        },
+                    ))
+                    .child(
+                        div()
+                            .w(px(110.))
+                            .font_weight(gpui::FontWeight::SEMIBOLD)
+                            .child(st.name),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .text_size(px(11.5))
+                            .text_color(color)
+                            .child(label),
+                    )
+                    .child(
+                        div()
+                            .text_size(px(10.5))
+                            .font_family(FONT_MONO)
+                            .text_color(t.faint)
+                            .child(
+                                st.config_path
+                                    .file_name()
+                                    .map(|f| f.to_string_lossy().to_string())
+                                    .unwrap_or_default(),
+                            ),
+                    )
+                    .when(can && !registered, |d| {
+                        d.child(
+                            div()
+                                .id(("ai-connect", i))
+                                .px(px(9.))
+                                .py(px(2.))
+                                .rounded(px(4.))
+                                .bg(t.cyan)
+                                .text_color(t.surface)
+                                .text_size(px(11.5))
+                                .cursor_pointer()
+                                .hover(move |s| s.bg(t.cyan_deep))
+                                .on_click(cx.listener(move |this, _, _, cx| this.ai_register(vec![id], cx)))
+                                .child("接入"),
+                        )
+                    })
+                    .when(registered, |d| {
+                        d.child(
+                            div()
+                                .id(("ai-disconnect", i))
+                                .px(px(7.))
+                                .py(px(2.))
+                                .rounded(px(4.))
+                                .text_size(px(11.))
+                                .text_color(t.muted)
+                                .cursor_pointer()
+                                .hover(move |s| s.bg(t.ink_08))
+                                .tooltip(move |window, cx| {
+                                    gpui_component::tooltip::Tooltip::new("从该工具的配置里移除 sluice 条目")
+                                        .build(window, cx)
+                                })
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    if let Some(spec) =
+                                        sluice_bridge::connect::TOOLS.iter().find(|t| t.id == id)
+                                    {
+                                        match sluice_bridge::connect::unregister(spec) {
+                                            Ok(()) => this.toast(format!("已从 {} 移除", spec.name), cx),
+                                            Err(e) => this.toast(format!("移除失败：{e:#}"), cx),
+                                        }
+                                        this.ai_status = sluice_bridge::connect::status_all();
+                                        cx.notify();
+                                    }
+                                }))
+                                .child("移除"),
+                        )
+                    }),
+            );
+        }
+        div()
+            .w(px(620.))
+            .flex()
+            .flex_col()
+            .child(self.panel_header(&t, "AI 工具接入", format!("{} 个已安装 · 零配置，不索取 API key", installed.len()), cx))
+            .child(
+                div().px(px(16.)).pt(px(10.)).pb(px(4.)).text_size(px(12.)).text_color(t.muted).line_height(px(18.)).child(
+                    "一键把 Sluice 注册为每个工具的 MCP server（只读工具：repo_status / list_changes / get_diff / log_query）。\
+                     优先用工具自己的 `mcp add` 命令；没有命令的工具会直接写入其配置文件，改动前自动备份 *.sluice.bak。",
+                ),
+            )
+            .child(
+                div()
+                    .mx(px(16.))
+                    .mb(px(6.))
+                    .px(px(8.))
+                    .py(px(4.))
+                    .rounded(px(5.))
+                    .bg(t.ink_05)
+                    .font_family(FONT_MONO)
+                    .text_size(px(11.))
+                    .text_color(t.muted)
+                    .child(format!("{} {}", cmd, args.join(" "))),
+            )
+            .child(rows)
+            .when_some(self.ai_report.clone(), |d, rep| {
+                d.child(
+                    div()
+                        .mx(px(16.))
+                        .mt(px(8.))
+                        .px(px(10.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .bg(t.cyan_soft)
+                        .text_size(px(11.5))
+                        .line_height(px(17.))
+                        .child(rep),
+                )
+            })
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(px(8.))
+                    .px(px(16.))
+                    .py(px(10.))
+                    .mt(px(6.))
+                    .border_t_1()
+                    .border_color(t.line_soft)
+                    .child(div().text_size(px(11.5)).text_color(t.faint).child("hooks 一键接入与会话溯源随提议-确认队列一起提供"))
+                    .child(div().ml_auto())
+                    .child(self.ghost_btn(&t, "ai-refresh", "重新检测").on_click(cx.listener(|this, _, _, cx| {
+                        this.ai_status = sluice_bridge::connect::status_all();
+                        cx.notify();
+                    })))
+                    .child(
+                        self.primary_btn(&t, "ai-connect-all", if busy { "接入中…" } else { "全部接入" })
+                            .when(installed.is_empty() || busy, |d| d.opacity(0.5))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if !this.ai_busy_connect {
+                                    let ids: Vec<&'static str> = this
+                                        .ai_status
+                                        .iter()
+                                        .filter(|s| s.state == sluice_bridge::connect::Registration::Installed)
+                                        .map(|s| s.id)
+                                        .collect();
+                                    if ids.is_empty() {
+                                        this.toast("没有需要接入的工具", cx);
+                                    } else {
+                                        this.ai_register(ids, cx);
+                                    }
+                                }
+                            })),
+                    ),
+            )
     }
 
     // ----- confirm dispatch -------------------------------------------------
@@ -329,6 +585,7 @@ impl Workbench {
         let t = self.theme;
         let overlay = self.overlay.clone()?;
         let content: gpui::AnyElement = match &overlay {
+            Overlay::AiConnect => self.render_ai_connect(cx).into_any_element(),
             Overlay::Branches => self.render_branches(window, cx).into_any_element(),
             Overlay::Stash => self.render_stash(cx).into_any_element(),
             Overlay::Snapshots => self.render_snapshots(cx).into_any_element(),
