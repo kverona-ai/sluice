@@ -10,7 +10,7 @@ AI agents write the code. You review, stage line by line, and open the gate.
 [![License](https://img.shields.io/badge/License-Apache--2.0-3b5bdb.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.97-dea584?logo=rust&logoColor=white)](rust-toolchain.toml)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-2f9e44)](#installation)
-[![Status](https://img.shields.io/badge/status-M3%20%2F%20M4%20in%20progress-e8590c)](#roadmap)
+[![Status](https://img.shields.io/badge/status-M4%20done%20%C2%B7%20beta%20packaging%20next-2f9e44)](#roadmap)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-d6006c.svg)](#contributing)
 
 **English** · [简体中文](./README.zh-CN.md)
@@ -66,6 +66,8 @@ rebuilt for the agentic era:
 | **Agent provenance** | commits are attributed to the agent that made them (trailer analysis today, deterministic session tracking on the roadmap) |
 | **Live refresh** | worktree + `.git` watcher; anything an agent does shows up in ~200 ms |
 | **Console** | every git command with duration, exit code and stderr; verbose mode reveals the read path too |
+| **Syntax-highlighted diffs** | tree-sitter grammars for 14 common languages, light & dark palettes |
+| **Dock layout** | drag-resizable panes, Console docks at the bottom (`⌥⌘6`); keymap presets (IDEA / VS Code) + `keymap.json` overrides; worktrees panel (`⌘⇧W`) |
 | **Chinese / English UI** | `⌘⇧L` toggles the language (persisted); dark / light theme `⌘⇧T` |
 | **Keyboard-first** | IDEA-style keymap: `⌘9` Log · `⌘0` Changes · `⌘B` branches · `⌘5` stash · `⌘K` commit panel · `⌘↩` commit · `Space` stage · full list in Settings (`⌘,`) |
 
@@ -162,9 +164,9 @@ IDEA-style preset (`Ctrl` instead of `⌘` on Windows/Linux): `↑/↓/PgUp/PgDn
 - ✅ **M2 — Commit**: staging down to lines, commit panel, AI drafts, push/pull
 - ✅ **M3 — Branches**: branches panel, merge / rebase, interactive rebase, stash, snapshots,
   three-way conflict resolver, file history & blame, multi-repo
-- 🔨 **M4 — AI bridge** *(mostly done)*: MCP server (read tools + propose_* tools), one-click
-  hookup incl. hooks, propose-and-confirm queue, session provenance, askpass; setup wizard polish
-  and public beta packaging next
+- ✅ **M4 — AI bridge**: MCP server (read tools + propose_* tools), one-click hookup incl. hooks,
+  propose-and-confirm queue, session provenance, askpass, settings / keymap / update check /
+  opt-in telemetry — public beta packaging (signing accounts) is the remaining step
 - ⏭ **M5 — Mobile companions**: review & approve from iOS / Android over the same Rust core
 - ⏭ **M6 — Extensions**: GitHub / GitLab PR review, jujutsu (jj) backend
 

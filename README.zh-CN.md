@@ -10,7 +10,7 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 [![License](https://img.shields.io/badge/License-Apache--2.0-3b5bdb.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-1.97-dea584?logo=rust&logoColor=white)](rust-toolchain.toml)
 [![Platforms](https://img.shields.io/badge/platforms-macOS%20%7C%20Windows-2f9e44)](#安装)
-[![Status](https://img.shields.io/badge/status-M3%20%2F%20M4%20in%20progress-e8590c)](#路线图)
+[![Status](https://img.shields.io/badge/status-M4%20done%20%C2%B7%20beta%20packaging%20next-2f9e44)](#路线图)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-d6006c.svg)](#参与贡献)
 
 [English](./README.md) · **简体中文**
@@ -50,6 +50,8 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 | **代理溯源** | 每条提交归因到产生它的代理（当前基于 trailer 分析，确定性会话溯源在路线图上） |
 | **实时刷新** | 工作区 + `.git` 监听；代理的任何动作约 200ms 内可见 |
 | **Console** | 每条 git 命令的耗时、退出码、stderr；详细模式连读路径也可见 |
+| **语法高亮 diff** | tree-sitter 内置 14 种常见语言语法，浅色 / 深色配色 |
+| **Dock 布局** | 面板可拖拽调整，Console 可拆到底部（`⌥⌘6`）；keymap 预设（IDEA / VS Code）+ `keymap.json` 逐条覆盖；worktree 面板（`⌘⇧W`） |
 | **中 / 英界面** | `⌘⇧L` 切换语言（持久化）；深色 / 浅色主题 `⌘⇧T` |
 | **键盘优先** | IDEA 风格键位：`⌘9` 日志 · `⌘0` 变更 · `⌘B` 分支 · `⌘5` stash · `⌘K` 提交面板 · `⌘↩` 提交 · `Space` 暂存；完整列表见设置（`⌘,`） |
 
@@ -139,7 +141,7 @@ IDEA 风格预设（Windows/Linux 用 `Ctrl` 代替 `⌘`）：`↑/↓/PgUp/PgD
 - ✅ **M1 —— 审查**：提交图、refs、过滤、diff、详情、实时监听
 - ✅ **M2 —— 提交**：行级暂存、提交面板、AI 起草、推拉
 - ✅ **M3 —— 分支**：分支面板、merge / rebase、交互式 rebase、stash、快照、三方冲突解决器、文件历史与 blame、多仓库
-- 🔨 **M4 —— AI 桥接**（大部分完成）：MCP server（读工具 + propose_* 工具）、一键接入含 hooks、提议-确认队列、会话溯源、askpass；接下来是向导打磨与 public beta 打包
+- ✅ **M4 —— AI 桥接**：MCP server（读工具 + propose_* 工具）、一键接入含 hooks、提议-确认队列、会话溯源、askpass、设置 / keymap / 更新检查 / opt-in 遥测——剩余的是 public beta 打包（签名账号）
 - ⏭ **M5 —— 移动伴侣**：iOS / Android 上审查与放行，复用同一 Rust 核心
 - ⏭ **M6 —— 扩展**：GitHub / GitLab PR 评审、jujutsu (jj) 后端
 

@@ -33,6 +33,9 @@ jobs:
             os: windows-2022
             target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_MAC_SIGNING: ${{ secrets.APPLE_CERT_P12 != '' }}
+      HAS_WIN_SIGNING: ${{ secrets.SIGNPATH_API_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
       - name: Install toolchain from rust-toolchain.toml
@@ -46,16 +49,67 @@ jobs:
         run: |
           V="$(grep -m1 '^version' Cargo.toml | sed 's/.*"\(.*\)".*/\1/')"
           echo "version=$V" >> "$GITHUB_OUTPUT"
-      - name: Package (macOS .app → zip)
+      - name: Bundle (macOS .app)
         if: runner.os == 'macOS'
         shell: bash
         run: |
           mkdir -p target/release
           cp "target/${{ matrix.target }}/release/sluice" target/release/sluice
           scripts/bundle-macos.sh release
+      # ---- macOS signing + notarization: runs only when the Developer ID secrets exist
+      #      (APPLE_CERT_P12 = base64 .p12, APPLE_CERT_PASSWORD, APPLE_TEAM_ID, APPLE_ID,
+      #      APPLE_APP_PASSWORD). Without them the preview ships unsigned (05 §9.4).
+      - name: Sign + notarize (macOS, when secrets are configured)
+        if: runner.os == 'macOS' && env.HAS_MAC_SIGNING == 'true'
+        shell: bash
+        env:
+          APPLE_CERT_P12: ${{ secrets.APPLE_CERT_P12 }}
+          APPLE_CERT_PASSWORD: ${{ secrets.APPLE_CERT_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_PASSWORD: ${{ secrets.APPLE_APP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KEYCHAIN=build.keychain-db
+          security create-keychain -p "" "$KEYCHAIN"
+          security default-keychain -s "$KEYCHAIN"
+          security unlock-keychain -p "" "$KEYCHAIN"
+          echo "$APPLE_CERT_P12" | base64 --decode > cert.p12
+          security import cert.p12 -k "$KEYCHAIN" -P "$APPLE_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "$KEYCHAIN"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" | grep 'Developer ID Application' | head -1 | sed 's/.*"\(.*\)".*/\1/')"
+          codesign --deep --force --options runtime --timestamp --sign "$IDENTITY" target/release/Sluice.app
+          ditto -c -k --keepParent target/release/Sluice.app notarize.zip
+          xcrun notarytool submit notarize.zip --apple-id "$APPLE_ID" --team-id "$APPLE_TEAM_ID" --password "$APPLE_APP_PASSWORD" --wait
+          xcrun stapler staple target/release/Sluice.app
+          rm -f cert.p12 notarize.zip
+      - name: Package (macOS zip)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
           mkdir -p dist
           ditto -c -k --keepParent target/release/Sluice.app "dist/sluice-${{ steps.ver.outputs.version }}-${{ matrix.name }}.zip"
           (cd dist && shasum -a 256 *.zip > "SHA256SUMS-${{ matrix.name }}.txt")
+      - name: Upload unsigned exe for SignPath
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGNING == 'true'
+        id: upload-unsigned
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-${{ matrix.name }}
+          path: target/${{ matrix.target }}/release/sluice.exe
+      # ---- Windows Authenticode via SignPath (free for OSS), only when SIGNPATH_API_TOKEN exists.
+      - name: Sign (Windows, SignPath, when secrets are configured)
+        if: runner.os == 'Windows' && env.HAS_WIN_SIGNING == 'true'
+        uses: signpath/github-action-submit-signing-request@v1
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ secrets.SIGNPATH_ORG_ID }}
+          project-slug: sluice
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: sluice-exe
+          github-artifact-id: ${{ steps.upload-unsigned.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: target/${{ matrix.target }}/release
       - name: Package (Windows zip)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -90,6 +144,7 @@ jobs:
           files: dist/*
           generate_release_notes: true
           body: |
-            Unsigned preview builds (macOS Gatekeeper / Windows SmartScreen will warn —
-            right-click → Open on macOS, "More info → Run anyway" on Windows). Signing and
-            notarization arrive with the first public beta. Verify downloads with SHA256SUMS.
+            Builds are signed + notarized automatically when the signing secrets are configured;
+            otherwise they are unsigned previews (macOS Gatekeeper / Windows SmartScreen will warn —
+            right-click → Open on macOS, "More info → Run anyway" on Windows). Verify downloads
+            with SHA256SUMS.

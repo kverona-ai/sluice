@@ -6,6 +6,15 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Syntax highlighting** in diffs via tree-sitter (Rust, JS/TS/TSX, Python, Go, JSON, TOML,
+  Bash, C, C++, Java, YAML, HTML, CSS), light + dark palettes.
+- **Dock-style layout**: resizable refs / center / details and tree / diff panes (widths
+  persisted); Console can be docked at the bottom (⌥⌘6).
+- **Keymap presets** (IDEA / VS Code) and `~/.sluice/keymap.json` per-action overrides;
+  effective table in Settings; Escape also on ctrl-[.
+- **Worktrees panel** (⌘⇧W): list / open / launch the detected AI CLI inside / add / remove.
+- **Update check** (`sluice update`, startup toast, Settings) and **opt-in telemetry client**
+  with local crash logs; release workflow signs + notarizes when secrets exist.
 - **English UI** (`⌘⇧L` or Settings → Appearance): `tr()` / `tf!` translation layer with a
   `assets/i18n/en.json` table covering the whole desktop UI; language persists in settings.
 - **Commit message history**: last 50 messages, ⟲ in the commit panel / `⌘⇧M`.
