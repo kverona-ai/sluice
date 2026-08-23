@@ -477,7 +477,7 @@ impl Workbench {
     /// menu always draws above the commit list and clamps to the window.
     fn render_popup(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let t = self.theme;
-        let (popup, at) = self.popup.clone()?;
+        let (popup, at) = self.popup?;
         let mut panel = div()
             .id("filter-popup")
             .occlude()
