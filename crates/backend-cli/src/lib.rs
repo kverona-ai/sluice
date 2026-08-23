@@ -162,9 +162,17 @@ impl GitCli {
             .env("LC_ALL", "C")
             .env("GIT_TERMINAL_PROMPT", "0")
             .env("PATH", env::login_path())
+            .env("SLUICE_REPO", &self.workdir)
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
+        // Desktop-provided credential prompts (05 §3): `sluice askpass` asks the app
+        // over IPC; git and ssh both route through it when the app set the env var.
+        if let Some(exe) = std::env::var_os("SLUICE_ASKPASS_EXE") {
+            cmd.env("GIT_ASKPASS", &exe)
+                .env("SSH_ASKPASS", &exe)
+                .env("SSH_ASKPASS_REQUIRE", "force");
+        }
         cmd
     }
 

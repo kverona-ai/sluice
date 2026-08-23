@@ -17,15 +17,19 @@ const MAX_DIFF_OUT: usize = 128 * 1024;
 
 pub struct McpServer {
     repo_path: PathBuf,
+    client: String,
 }
 
 impl McpServer {
     pub fn new(repo_path: PathBuf) -> Self {
-        Self { repo_path }
+        Self {
+            repo_path,
+            client: "mcp client".into(),
+        }
     }
 
     /// Blocking serve loop over stdin/stdout. Returns when stdin closes.
-    pub fn serve(&self) -> Result<()> {
+    pub fn serve(&mut self) -> Result<()> {
         let stdin = std::io::stdin();
         let stdout = std::io::stdout();
         for line in stdin.lock().lines() {
@@ -62,14 +66,23 @@ impl McpServer {
         Ok(())
     }
 
-    fn dispatch(&self, method: &str, params: &Value) -> Result<Value> {
+    fn dispatch(&mut self, method: &str, params: &Value) -> Result<Value> {
         match method {
-            "initialize" => Ok(json!({
-                "protocolVersion": params.get("protocolVersion").and_then(Value::as_str).unwrap_or(PROTOCOL_VERSION),
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "sluice", "version": env!("CARGO_PKG_VERSION")},
-                "instructions": "Read-only view of the git repository Sluice has open. Write operations are proposals reviewed by a human in Sluice; destructive git operations are not exposed at all."
-            })),
+            "initialize" => {
+                if let Some(name) = params
+                    .get("clientInfo")
+                    .and_then(|c| c.get("name"))
+                    .and_then(Value::as_str)
+                {
+                    self.client = name.to_string();
+                }
+                Ok(json!({
+                    "protocolVersion": params.get("protocolVersion").and_then(Value::as_str).unwrap_or(PROTOCOL_VERSION),
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "sluice", "version": env!("CARGO_PKG_VERSION")},
+                    "instructions": "Read tools return the git repository state. propose_* tools do NOT act: they queue a proposal in the Sluice desktop app and block until a human accepts or rejects it (up to 10 minutes). Destructive git operations are not exposed at all."
+                }))
+            }
             "ping" => Ok(json!({})),
             "tools/list" => Ok(tools_list()),
             "tools/call" => self.tool_call(params),
@@ -89,6 +102,24 @@ impl McpServer {
             "list_changes" => self.list_changes(&args)?,
             "get_diff" => self.get_diff(&args)?,
             "log_query" => self.log_query(&args)?,
+            "propose_commit" => self.propose(crate::ipc::ProposalKind::Commit {
+                message: args
+                    .get("message")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                paths: args
+                    .get("paths")
+                    .and_then(Value::as_array)
+                    .map(|a| a.iter().filter_map(Value::as_str).map(String::from).collect()),
+            })?,
+            "propose_branch" => self.propose(crate::ipc::ProposalKind::Branch {
+                name: args.get("name").and_then(Value::as_str).unwrap_or("").to_string(),
+                checkout: args.get("checkout").and_then(Value::as_bool).unwrap_or(true),
+            })?,
+            "propose_push" => self.propose(crate::ipc::ProposalKind::Push {
+                set_upstream: args.get("set_upstream").and_then(Value::as_bool).unwrap_or(false),
+            })?,
             other => anyhow::bail!("unknown tool {other}"),
         };
         Ok(json!({
@@ -96,6 +127,35 @@ impl McpServer {
             "structuredContent": value,
             "isError": false
         }))
+    }
+
+    /// Queue a proposal in the desktop app and wait for the human decision.
+    fn propose(&self, kind: crate::ipc::ProposalKind) -> Result<Value> {
+        if let crate::ipc::ProposalKind::Commit { message, .. } = &kind
+            && message.trim().is_empty()
+        {
+            anyhow::bail!("message is required");
+        }
+        if let crate::ipc::ProposalKind::Branch { name, .. } = &kind
+            && name.trim().is_empty()
+        {
+            anyhow::bail!("name is required");
+        }
+        if !crate::ipc::ping(&self.repo_path) {
+            return Ok(json!({
+                "status": "unavailable",
+                "detail": "Sluice desktop is not running for this repository; open it (sluice open <repo>) and retry."
+            }));
+        }
+        let decision = crate::ipc::propose(&self.repo_path, kind, &self.client)?;
+        Ok(match decision {
+            crate::ipc::Decision::Accepted { detail } => json!({"status": "accepted", "detail": detail}),
+            crate::ipc::Decision::Rejected { reason } => json!({"status": "rejected", "detail": reason}),
+            crate::ipc::Decision::Timeout => json!({
+                "status": "pending",
+                "detail": "no human decision within 10 minutes; the proposal is still queued in Sluice"
+            }),
+        })
     }
 
     fn cli(&self) -> Result<Option<GitCli>> {
@@ -338,6 +398,27 @@ fn tools_list() -> Value {
                 "paths": paths_prop,
                 "context": {"type": "integer", "minimum": 0, "maximum": 40}
             }, "additionalProperties": false}
+        },
+        {
+            "name": "propose_commit",
+            "description": "Propose a commit (stage the given paths — or all tracked changes when omitted — and commit with `message`). Nothing happens until a human accepts it in the Sluice desktop app; this call blocks for the decision (≤ 10 min). Returns status accepted | rejected | pending | unavailable.",
+            "inputSchema": {"type": "object", "required": ["message"], "properties": {
+                "message": {"type": "string", "description": "full commit message (subject line + optional body)"},
+                "paths": {"type": "array", "items": {"type": "string"}, "description": "paths to stage; omit for all tracked changes"}
+            }, "additionalProperties": false}
+        },
+        {
+            "name": "propose_branch",
+            "description": "Propose creating a branch from HEAD (optionally checking it out). Human-confirmed in Sluice.",
+            "inputSchema": {"type": "object", "required": ["name"], "properties": {
+                "name": {"type": "string"},
+                "checkout": {"type": "boolean", "default": true}
+            }, "additionalProperties": false}
+        },
+        {
+            "name": "propose_push",
+            "description": "Propose pushing the current branch to its remote. Human-confirmed in Sluice; never force-pushes.",
+            "inputSchema": {"type": "object", "properties": {"set_upstream": {"type": "boolean", "default": false}}, "additionalProperties": false}
         },
         {
             "name": "log_query",

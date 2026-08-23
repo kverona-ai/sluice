@@ -51,8 +51,9 @@ enum Command {
         #[command(subcommand)]
         cmd: AiCommand,
     },
-    /// Receive an AI tool hook event on stdin and forward it to the running app (M4, 03 §2).
-    Hook { tool: String },
+    /// Receive an AI tool hook event (JSON on stdin, or as the last argument for
+    /// Codex `notify`) and record it for session provenance (03 §4). Always exits 0.
+    Hook { tool: String, payload: Option<String> },
     /// GIT_ASKPASS / SSH_ASKPASS helper (M2, 05 §3).
     Askpass { prompt: Option<String> },
     /// GIT_EDITOR helper for non-interactive reword / squash (M3, 05 §6).
@@ -107,11 +108,86 @@ fn main() -> Result<()> {
             sluice_bridge::mcp::McpServer::new(path).serve()
         }
         Some(Command::Ai { cmd }) => run_ai(cmd),
-        Some(Command::Hook { tool }) => not_yet(&format!("sluice hook {tool}"), "M4 — 03 §2"),
-        Some(Command::Askpass { .. }) => not_yet("sluice askpass", "M2 — 05 §3"),
+        Some(Command::Hook { tool, payload }) => {
+            let raw = match payload {
+                Some(p) => p,
+                None => {
+                    let mut buf = String::new();
+                    let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut buf);
+                    buf
+                }
+            };
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(raw.trim()) {
+                let now = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs() as i64)
+                    .unwrap_or(0);
+                let mut ev = sluice_bridge::provenance::normalize(&tool, &v, now);
+                if ev.cwd.is_empty() {
+                    ev.cwd = std::env::current_dir()
+                        .map(|p| p.to_string_lossy().to_string())
+                        .unwrap_or_default();
+                }
+                if let Err(e) = sluice_bridge::provenance::record(&ev) {
+                    tracing::warn!("provenance record failed: {e:#}");
+                }
+            }
+            Ok(())
+        }
+        Some(Command::Askpass { prompt }) => {
+            let repo = std::env::var_os("SLUICE_REPO")
+                .map(PathBuf::from)
+                .or_else(|| std::env::current_dir().ok())
+                .unwrap_or_else(|| PathBuf::from("."));
+            match sluice_bridge::ipc::askpass(&repo, prompt.as_deref().unwrap_or("Credential"))? {
+                Some(secret) => {
+                    println!("{secret}");
+                    Ok(())
+                }
+                None => std::process::exit(1),
+            }
+        }
         Some(Command::Editor { .. }) => not_yet("sluice editor", "M3 — 05 §6"),
         Some(Command::SeqEditor { .. }) => not_yet("sluice seq-editor", "M3 — 05 §6"),
-        Some(Command::Diagnostics) => not_yet("sluice diagnostics", "M1 — 05 §9.2"),
+        Some(Command::Diagnostics) => {
+            let path = resolve_path(cli.path).unwrap_or_else(|_| PathBuf::from("."));
+            let mut out = String::new();
+            out.push_str(&format!("sluice {}\n", env!("CARGO_PKG_VERSION")));
+            out.push_str(&format!(
+                "os: {} {}\n",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            ));
+            let git = sluice_backend_cli::env::find_git();
+            out.push_str(&format!(
+                "git: {}\n",
+                git.as_ref()
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| "NOT FOUND".into())
+            ));
+            if let Some(g) = &git
+                && let Ok(o) = std::process::Command::new(g).arg("--version").output()
+            {
+                out.push_str(&format!("git version: {}", String::from_utf8_lossy(&o.stdout)));
+            }
+            out.push_str(&format!(
+                "login PATH: {}\n",
+                sluice_backend_cli::env::login_path()
+            ));
+            out.push_str(&format!("repo: {}\n", path.display()));
+            out.push_str(&format!(
+                "desktop ipc reachable: {}\n",
+                sluice_bridge::ipc::ping(&path)
+            ));
+            for st in sluice_bridge::connect::status_all() {
+                out.push_str(&format!("ai {:<12} {:?}\n", st.id, st.state));
+            }
+            let file = std::env::temp_dir().join(format!("sluice-diagnostics-{}.txt", std::process::id()));
+            std::fs::write(&file, &out)?;
+            print!("{out}");
+            println!("written to {}", file.display());
+            Ok(())
+        }
     }
 }
 
@@ -233,7 +309,21 @@ fn dump_log(path: Option<PathBuf>, limit: usize, topo: bool) -> Result<()> {
 
 fn run_app(path: Option<PathBuf>) -> Result<()> {
     let path = resolve_path(path)?;
+    if let Ok(exe) = std::env::current_exe() {
+        // SAFETY: set before any thread is spawned; read later by GitCli::command.
+        unsafe { std::env::set_var("SLUICE_ASKPASS_EXE", exe) };
+    }
     let repo = Repo::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let (ipc_tx, ipc_rx) = async_channel::unbounded();
+    let ipc_repo = repo
+        .cli
+        .as_ref()
+        .map(|c| c.workdir().to_path_buf())
+        .unwrap_or_else(|| path.clone());
+    match sluice_bridge::ipc::serve(ipc_repo.clone(), ipc_tx) {
+        Ok(ep) => tracing::info!("ipc listening on 127.0.0.1:{} for {}", ep.port, ep.repo.display()),
+        Err(e) => tracing::warn!("ipc server not started: {e:#}"),
+    }
     let title = format!(
         "{} — {}",
         repo.info.name,
@@ -256,6 +346,12 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                 }
             })
             .detach();
+            let quit_repo = ipc_repo.clone();
+            cx.on_app_quit(move |_| {
+                let repo = quit_repo.clone();
+                async move { sluice_bridge::ipc::remove_endpoint(&repo) }
+            })
+            .detach();
 
             let bounds = Bounds::centered(None, size(px(1400.), px(860.)), cx);
             let options = WindowOptions {
@@ -271,7 +367,11 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                 ..Default::default()
             };
             cx.open_window(options, |window, cx| {
-                let workbench = cx.new(|cx| Workbench::new(repo, window, cx));
+                let workbench = cx.new(|cx| {
+                    let mut w = Workbench::new(repo, window, cx);
+                    w.attach_ipc(ipc_rx, cx);
+                    w
+                });
                 cx.new(|cx| Root::new(gpui::AnyView::from(workbench), window, cx))
             })
             .expect("failed to open the Sluice window");

@@ -950,13 +950,26 @@ impl Workbench {
         } else {
             "未签名"
         };
+        // Session provenance: hook events (sluice hook <tool>) touching this commit's
+        // files within the 12 h before the commit.
+        let commit_at = c.author.time.timestamp();
+        let commit_files: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
+        let matches = self.provenance_for(&c.id, &commit_files, commit_at);
         let trace = if c.agent.is_ai() {
             format!(
-                "{} · 依据 Co-authored-by / Sluice-Agent trailer 判定；会话 ID 与确定性关联由 M4 的 bridge 溯源库提供。",
+                "{} · 依据 Co-authored-by / Sluice-Agent trailer 判定。",
                 c.agent.label()
             )
+        } else if matches.is_empty() {
+            format!(
+                "人类提交 —— 作者 {}。未发现 AI 代理 trailer，也没有匹配的 AI 会话记录。",
+                c.author.name
+            )
         } else {
-            format!("人类提交 —— 作者 {}。未发现 AI 代理 trailer。", c.author.name)
+            format!(
+                "作者 {}；trailer 未标注 AI，但以下 AI 会话在提交前修改过这些文件：",
+                c.author.name
+            )
         };
         let open_path = self.commit_diff.as_ref().map(|dv| dv.change.path.clone());
 
@@ -1152,13 +1165,71 @@ impl Workbench {
                         .child("会话溯源".to_uppercase()),
                 )
                 .child(div().text_size(px(12.5)).line_height(px(19.)).child(trace))
+                .children(matches.iter().take(6).map(|m| {
+                    let when = chrono::DateTime::from_timestamp(m.last_at, 0)
+                        .map(|d| d.with_timezone(&chrono::Local).format("%m/%d %H:%M").to_string())
+                        .unwrap_or_default();
+                    let sid: String = m.session_id.chars().take(8).collect();
+                    let agent = sluice_core::Agent::detect(&format!("Sluice-Agent: {}", m.tool), "", "");
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap(px(6.))
+                        .text_size(px(11.5))
+                        .child(crate::workbench::agent_badge(&t, agent))
+                        .child(
+                            div()
+                                .font_weight(gpui::FontWeight::SEMIBOLD)
+                                .child(m.tool.clone()),
+                        )
+                        .child(
+                            div()
+                                .font_family(FONT_MONO)
+                                .text_color(t.faint)
+                                .child(format!("会话 {sid}")),
+                        )
+                        .child(div().text_color(t.muted).child(format!(
+                            "{} 次改动 · {} 个文件 · {when}",
+                            m.events,
+                            m.files.len()
+                        )))
+                }))
                 .child(
                     div()
-                        .text_size(px(12.))
-                        .text_color(t.cyan_deep)
-                        .child("查看 agent 会话摘要 →（M4）"),
+                        .text_size(px(11.))
+                        .text_color(t.faint)
+                        .child(if matches.is_empty() {
+                            "溯源数据来自各 AI CLI 的 hooks（AI 接入面板一键安装）".to_string()
+                        } else {
+                            format!(
+                                "匹配规则：提交前 12 小时内、触及相同路径的 hook 事件，共 {} 个会话",
+                                matches.len()
+                            )
+                        }),
                 ),
         )
+    }
+
+    /// Cached provenance matches for the commit shown in the details pane.
+    fn provenance_for(
+        &mut self,
+        id: &Oid,
+        files: &[String],
+        commit_at: i64,
+    ) -> Vec<sluice_bridge::provenance::SessionMatch> {
+        if let Some((cached_id, m)) = &self.provenance_cache
+            && cached_id == id
+        {
+            return m.clone();
+        }
+        let root = self.repo.cli.as_ref().map(|c| c.workdir().to_path_buf());
+        let events = root
+            .map(|r| sluice_bridge::provenance::load(&r))
+            .unwrap_or_default();
+        let m = sluice_bridge::provenance::matches_for_commit(&events, files, commit_at, 12 * 3600);
+        self.provenance_cache = Some((id.clone(), m.clone()));
+        m
     }
 }
 

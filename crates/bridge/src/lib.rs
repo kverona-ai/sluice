@@ -5,4 +5,7 @@
 //! the rest of M4; destructive operations will never get a tool (03 §3).
 
 pub mod connect;
+pub mod hooks;
+pub mod ipc;
 pub mod mcp;
+pub mod provenance;

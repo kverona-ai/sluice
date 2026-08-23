@@ -137,7 +137,7 @@ IDEA 风格预设（Windows/Linux 用 `Ctrl` 代替 `⌘`）：`↑/↓/PgUp/PgD
 - ✅ **M1 —— 审查**：提交图、refs、过滤、diff、详情、实时监听
 - ✅ **M2 —— 提交**：行级暂存、提交面板、AI 起草、推拉
 - 🔨 **M3 —— 分支**（当前）：分支面板、merge / rebase、stash、快照、文件历史与 blame 已完成；交互式 rebase 界面与三方合并器接下来
-- 🔨 **M4 —— AI 桥接**（已开始）：只读 MCP server 与一键接入已完成；会话溯源与提议-确认队列接下来 → 首个 public beta
+- 🔨 **M4 —— AI 桥接**（大部分完成）：MCP server（读工具 + propose_* 工具）、一键接入含 hooks、提议-确认队列、会话溯源、askpass；接下来是向导打磨与 public beta 打包
 - ⏭ **M5 —— 移动伴侣**：iOS / Android 上审查与放行，复用同一 Rust 核心
 - ⏭ **M6 —— 扩展**：GitHub / GitLab PR 评审、jujutsu (jj) 后端
 

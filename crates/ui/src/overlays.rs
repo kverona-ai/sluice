@@ -19,6 +19,8 @@ use crate::workbench::{Tab, Workbench, checkbox, section_label};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Overlay {
     AiConnect,
+    Proposals,
+    Askpass,
     Branches,
     Stash,
     Snapshots,
@@ -117,6 +119,7 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
     ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
     ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
+    ("待确认队列（AI 提议）", "⌘⇧P", "Ctrl+Shift+P"),
     ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
     ("提交", "⌘↩", "Ctrl+Enter"),
     ("全部暂存 / 取消暂存", "⌥⌘A / ⌥⌘U", "Ctrl+Alt+A / U"),
@@ -204,6 +207,9 @@ impl Workbench {
             return true;
         }
         if self.overlay.is_some() {
+            if self.overlay == Some(Overlay::Askpass) {
+                self.cancel_askpass_silent();
+            }
             self.overlay = None;
             cx.notify();
             return true;
@@ -251,6 +257,15 @@ impl Workbench {
                                 }
                             )),
                             Err(e) => lines.push(format!("✗ {} — {e:#}", spec.name)),
+                        }
+                        match sluice_bridge::hooks::install(spec.id) {
+                            Ok(h) => lines.push(format!(
+                                "   hooks：{} · {}（{}）",
+                                h.outcome,
+                                h.path.display(),
+                                h.note
+                            )),
+                            Err(e) => lines.push(format!("   hooks 失败：{e:#}")),
                         }
                     }
                     lines
@@ -437,7 +452,7 @@ impl Workbench {
                     .mt(px(6.))
                     .border_t_1()
                     .border_color(t.line_soft)
-                    .child(div().text_size(px(11.5)).text_color(t.faint).child("hooks 一键接入与会话溯源随提议-确认队列一起提供"))
+                    .child(div().text_size(px(11.5)).text_color(t.faint).child("接入同时安装 hooks（文件改动 / 会话结束 → 会话溯源）"))
                     .child(div().ml_auto())
                     .child(self.ghost_btn(&t, "ai-refresh", "重新检测").on_click(cx.listener(|this, _, _, cx| {
                         this.ai_status = sluice_bridge::connect::status_all();
@@ -586,6 +601,11 @@ impl Workbench {
         let overlay = self.overlay.clone()?;
         let content: gpui::AnyElement = match &overlay {
             Overlay::AiConnect => self.render_ai_connect(cx).into_any_element(),
+            Overlay::Proposals => self.render_proposals(cx).into_any_element(),
+            Overlay::Askpass => match self.render_askpass(cx) {
+                Some(e) => e.into_any_element(),
+                None => div().into_any_element(),
+            },
             Overlay::Branches => self.render_branches(window, cx).into_any_element(),
             Overlay::Stash => self.render_stash(cx).into_any_element(),
             Overlay::Snapshots => self.render_snapshots(cx).into_any_element(),
@@ -625,7 +645,7 @@ impl Workbench {
         )
     }
 
-    fn panel_header(
+    pub(crate) fn panel_header(
         &self,
         t: &Theme,
         title: &'static str,

@@ -58,6 +58,8 @@ rebuilt for the agentic era:
 | **Commit panel** | Amend / Sign-off / Author override / skip-hooks, Commit & Push, undo-friendly toasts |
 | **AI commit messages** | drafted by your installed CLI — Claude Code, Codex CLI, Grok Build, DeepSeek Harness, Gemini CLI, Kimi Code, Z Code, Qwen Code, opencode, GitHub Copilot CLI — auto-detected, zero keys |
 | **One-click AI hookup** | `⌘⇧I` or `sluice ai connect`: registers Sluice's read-only MCP server with every installed AI CLI (uses each tool's own `mcp add`, or a backed-up config edit where no command exists) |
+| **Propose-and-confirm queue** | agents call `propose_commit` / `propose_branch` / `propose_push` over MCP; the call blocks until you accept or reject in Sluice (`⌘⇧P`), and only an accepted proposal runs — via your own git |
+| **Session provenance** | `sluice hook <tool>` events (installed with one click) link commits to the AI sessions that touched the same files, even when no trailer was written |
 | **File history & blame** | `git log --follow` per file with jump-to-commit; blame with commit-banded gutter, hover to highlight a commit (`⌘⇧H` / `⌥⌘B`, or right-click any file) |
 | **Branches / stash / time machine** | branches panel with checkout · merge · rebase · delete · new; stash push/apply/pop/drop; automatic safety snapshots before discard / reset --hard |
 | **Agent provenance** | commits are attributed to the agent that made them (trailer analysis today, deterministic session tracking on the roadmap) |
@@ -156,8 +158,9 @@ IDEA-style preset (`Ctrl` instead of `⌘` on Windows/Linux): `↑/↓/PgUp/PgDn
 - ✅ **M2 — Commit**: staging down to lines, commit panel, AI drafts, push/pull
 - 🔨 **M3 — Branches** *(current)*: branches panel, merge / rebase, stash, snapshots, file
   history & blame done; interactive rebase UI and 3-way merge resolver next
-- 🔨 **M4 — AI bridge** *(started)*: read-only MCP server and one-click hookup done; session
-  provenance and the propose-and-confirm queue next → first public beta
+- 🔨 **M4 — AI bridge** *(mostly done)*: MCP server (read tools + propose_* tools), one-click
+  hookup incl. hooks, propose-and-confirm queue, session provenance, askpass; setup wizard polish
+  and public beta packaging next
 - ⏭ **M5 — Mobile companions**: review & approve from iOS / Android over the same Rust core
 - ⏭ **M6 — Extensions**: GitHub / GitLab PR review, jujutsu (jj) backend
 

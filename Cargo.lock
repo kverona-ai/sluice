@@ -6728,9 +6728,12 @@ name = "sluice"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-channel 2.5.0",
  "clap",
  "gpui",
  "gpui-component",
+ "serde_json",
+ "sluice-backend-cli",
  "sluice-backend-gix",
  "sluice-bridge",
  "sluice-core",
@@ -6773,6 +6776,7 @@ name = "sluice-bridge"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-channel 2.5.0",
  "dirs 6.0.0",
  "serde",
  "serde_json",
@@ -6827,6 +6831,7 @@ name = "sluice-ui"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-channel 2.5.0",
  "chrono",
  "gpui",
  "gpui-component",

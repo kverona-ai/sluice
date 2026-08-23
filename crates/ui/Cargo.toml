@@ -13,6 +13,7 @@ sluice-core.workspace = true
 sluice-domain.workspace = true
 sluice-backend-cli.workspace = true
 sluice-bridge.workspace = true
+async-channel.workspace = true
 sluice-watch.workspace = true
 sluice-graph.workspace = true
 gpui.workspace = true

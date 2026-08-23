@@ -58,6 +58,9 @@ actions!(
         OpenFileHistory,
         OpenBlame,
         OpenAiConnect,
+        OpenProposals,
+        ProposalAccept,
+        ProposalReject,
         StageAll,
         UnstageAll,
         ToggleSelected,
@@ -158,6 +161,10 @@ pub struct Workbench {
     pub ai_status: Vec<sluice_bridge::connect::ToolStatus>,
     pub ai_report: Option<String>,
     pub ai_busy_connect: bool,
+    pub proposals: Vec<crate::proposals::PendingProposal>,
+    pub provenance_cache: Option<(Oid, Vec<sluice_bridge::provenance::SessionMatch>)>,
+    pub pending_askpass_prompt: Option<(String, std::sync::mpsc::Sender<Option<String>>)>,
+    pub askpass_input: Entity<InputState>,
     /// Selection history for the ◀ ▶ title-bar buttons (commit ids).
     pub history: Vec<Oid>,
     pub history_ix: usize,
@@ -183,6 +190,11 @@ impl Workbench {
         let branch_filter = cx.new(|cx| InputState::new(window, cx).placeholder("搜索分支 / 标签"));
         let new_branch_name = cx.new(|cx| InputState::new(window, cx).placeholder("feat/my-branch"));
         let stash_msg = cx.new(|cx| InputState::new(window, cx).placeholder("stash 说明（可选）"));
+        let askpass_input = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("密码 / token / passphrase")
+        });
         cx.subscribe(&branch_filter, |_, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
                 cx.notify();
@@ -261,6 +273,10 @@ impl Workbench {
             ai_status: Vec::new(),
             ai_report: None,
             ai_busy_connect: false,
+            proposals: Vec::new(),
+            provenance_cache: None,
+            pending_askpass_prompt: None,
+            askpass_input,
             history: Vec::new(),
             history_ix: 0,
             _watcher: None,
@@ -1047,17 +1063,43 @@ impl Workbench {
                     .flex_col()
                     .gap(px(2.))
                     .child(
-                        item(
-                            "rail-ai",
-                            "sparkle",
-                            "AI",
-                            "AI 工具 / 待确认队列（M4）",
-                            false,
-                            Some(t.mag),
-                        )
-                        .on_click(
-                            cx.listener(|this, _, _, cx| this.not_yet("AI 工具接入与待确认队列", "M4", cx)),
-                        ),
+                        div()
+                            .relative()
+                            .child(
+                                item(
+                                    "rail-ai",
+                                    "sparkle",
+                                    "AI",
+                                    "AI 工具接入 ⌘⇧I / 待确认队列 ⌘⇧P",
+                                    !self.proposals.is_empty(),
+                                    Some(t.mag),
+                                )
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    if this.proposals.is_empty() {
+                                        this.open_ai_connect(cx)
+                                    } else {
+                                        this.open_proposals(cx)
+                                    }
+                                })),
+                            )
+                            .when(!self.proposals.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .absolute()
+                                        .top(px(1.))
+                                        .right(px(1.))
+                                        .min_w(px(14.))
+                                        .h(px(14.))
+                                        .px(px(3.))
+                                        .rounded(px(7.))
+                                        .bg(t.mag)
+                                        .text_color(t.surface)
+                                        .text_size(px(9.5))
+                                        .line_height(px(14.))
+                                        .text_center()
+                                        .child(self.proposals.len().to_string()),
+                                )
+                            }),
                     )
                     .child(
                         item(
@@ -1136,6 +1178,17 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
             .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
             .on_action(cx.listener(|this, _: &OpenAiConnect, _, cx| this.open_ai_connect(cx)))
+            .on_action(cx.listener(|this, _: &OpenProposals, _, cx| this.open_proposals(cx)))
+            .on_action(cx.listener(|this, _: &ProposalAccept, _, cx| {
+                if this.overlay == Some(crate::overlays::Overlay::Proposals) {
+                    this.decide_proposal(0, true, cx);
+                }
+            }))
+            .on_action(cx.listener(|this, _: &ProposalReject, _, cx| {
+                if this.overlay == Some(crate::overlays::Overlay::Proposals) {
+                    this.decide_proposal(0, false, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &OpenFileHistory, _, cx| {
                 this.file_action(crate::file_view::FileViewMode::History, cx)
             }))

@@ -6,6 +6,15 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Propose-and-confirm queue**: loopback IPC between the desktop app and `sluice mcp serve`;
+  MCP tools `propose_commit` / `propose_branch` / `propose_push` block until a human decides in
+  the queue (`⌘⇧P`, rail badge); accepted proposals run through the user's git and the result is
+  returned to the agent; rejections and timeouts are reported.
+- **Session provenance**: `sluice hook <tool>` normalizes hook payloads (Claude Code / Codex /
+  Gemini / Qwen / Kimi / Copilot / Grok) into `~/.sluice/provenance/*.jsonl`; commit details show
+  the AI sessions that touched the commit's files in the 12 h before it. Hooks are installed by
+  the AI hookup (per-tool merge rules, idempotent).
+- `sluice askpass` (GIT_ASKPASS / SSH_ASKPASS through the desktop), `sluice diagnostics`.
 - **One-click AI hookup** (`⌘⇧I`, `sluice ai status|connect|disconnect`): detects installed
   AI CLIs and registers the Sluice MCP server — via each tool's own `mcp add` (Claude Code,
   Codex, Gemini, Qwen, Copilot, Grok Build) or a backed-up partial config edit (opencode,
