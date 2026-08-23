@@ -6,6 +6,8 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- Self-screenshot mode (`SLUICE_SCREENSHOT=<png>`, macOS; `_TAB` / `_DARK` / `_OPEN` knobs)
+  used for the README images and future visual checks.
 - **Syntax highlighting** in diffs via tree-sitter (Rust, JS/TS/TSX, Python, Go, JSON, TOML,
   Bash, C, C++, Java, YAML, HTML, CSS), light + dark palettes.
 - **Dock-style layout**: resizable refs / center / details and tree / diff panes (widths

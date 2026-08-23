@@ -6,6 +6,8 @@
 use std::path::PathBuf;
 
 use anyhow::{Context as _, Result};
+mod shot;
+
 use clap::{Parser, Subcommand};
 use gpui::{
     App, AppContext as _, Application, Bounds, KeyBinding, Menu, MenuItem, TitlebarOptions,
@@ -317,6 +319,10 @@ fn dump_log(path: Option<PathBuf>, limit: usize, topo: bool) -> Result<()> {
     Ok(())
 }
 
+/// Handle to the workbench for the screenshot mode (set as a gpui global).
+struct ShotTarget(gpui::Entity<Workbench>);
+impl gpui::Global for ShotTarget {}
+
 fn run_app(path: Option<PathBuf>) -> Result<()> {
     sluice_bridge::telemetry::install_crash_hook();
     let path = resolve_path(path)?;
@@ -403,16 +409,61 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                 app_id: Some("ai.kverona.sluice".into()),
                 ..Default::default()
             };
-            cx.open_window(options, |window, cx| {
-                let workbench = cx.new(|cx| {
-                    let mut w = Workbench::new(repo, window, cx);
-                    w.attach_ipc(ipc_rx, cx);
-                    w
-                });
-                cx.new(|cx| Root::new(gpui::AnyView::from(workbench), window, cx))
-            })
-            .expect("failed to open the Sluice window");
+            let shot_path = std::env::var_os("SLUICE_SCREENSHOT").map(PathBuf::from);
+            let shot_tab = std::env::var("SLUICE_SCREENSHOT_TAB").unwrap_or_default();
+            let shot_dark = std::env::var("SLUICE_SCREENSHOT_DARK").is_ok();
+            let shot_open = std::env::var("SLUICE_SCREENSHOT_OPEN").is_ok();
+            let handle = cx
+                .open_window(options, |window, cx| {
+                    let workbench = cx.new(|cx| {
+                        let mut w = Workbench::new(repo, window, cx);
+                        w.attach_ipc(ipc_rx, cx);
+                        w
+                    });
+                    let wb = workbench.clone();
+                    cx.new(|cx| {
+                        let root = Root::new(gpui::AnyView::from(workbench), window, cx);
+                        cx.set_global(ShotTarget(wb));
+                        root
+                    })
+                })
+                .expect("failed to open the Sluice window");
             cx.activate(true);
+            if let Some(out) = shot_path {
+                // Docs screenshot mode: wait for data, pose the window, capture, quit.
+                cx.spawn(async move |cx| {
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_secs(3))
+                        .await;
+                    let _ = handle.update(cx, |_root, window, cx| {
+                        let wb = cx.global::<ShotTarget>().0.clone();
+                        wb.update(cx, |w, cx| {
+                            if shot_dark && !w.theme.is_dark {
+                                w.toggle_theme(cx);
+                            }
+                            match shot_tab.as_str() {
+                                "changes" => w.set_tab(sluice_ui::workbench::Tab::Changes, cx),
+                                "console" => w.set_tab(sluice_ui::workbench::Tab::Console, cx),
+                                _ => {}
+                            }
+                            if shot_open {
+                                w.move_work_file(1, cx);
+                            }
+                            cx.notify();
+                        });
+                        window.refresh();
+                    });
+                    cx.background_executor()
+                        .timer(std::time::Duration::from_millis(1500))
+                        .await;
+                    match shot::capture_own_window(&out) {
+                        Ok(()) => eprintln!("screenshot written to {}", out.display()),
+                        Err(e) => eprintln!("screenshot failed: {e:#}"),
+                    }
+                    let _ = cx.update(|cx| cx.quit());
+                })
+                .detach();
+            }
         });
     Ok(())
 }

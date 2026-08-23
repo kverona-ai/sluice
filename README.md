@@ -17,6 +17,14 @@ AI agents write the code. You review, stage line by line, and open the gate.
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/screenshot-log.png" alt="Log — commit graph, agent badges, live filters, commit details with session provenance" width="900">
+</p>
+<p align="center">
+  <img src="docs/assets/screenshot-changes.png" alt="Local Changes — staged / unstaged / untracked tree, side-by-side diff with line-level staging" width="445">
+  <img src="docs/assets/screenshot-dark.png" alt="Dark theme" width="445">
+</p>
+
 ---
 
 ## What is Sluice?

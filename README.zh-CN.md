@@ -17,6 +17,14 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 
 </div>
 
+<p align="center">
+  <img src="docs/assets/screenshot-log.png" alt="日志 —— 提交图、agent 徽章、实时过滤、带会话溯源的提交详情" width="900">
+</p>
+<p align="center">
+  <img src="docs/assets/screenshot-changes.png" alt="本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与行级暂存" width="445">
+  <img src="docs/assets/screenshot-dark.png" alt="深色主题" width="445">
+</p>
+
 ---
 
 ## Sluice 是什么？

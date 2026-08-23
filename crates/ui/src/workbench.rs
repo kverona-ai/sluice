@@ -973,7 +973,7 @@ impl Workbench {
         self.reload_changes(cx);
     }
 
-    fn set_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
+    pub fn set_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
         self.tab = tab;
         self.popup = None;
         cx.notify();

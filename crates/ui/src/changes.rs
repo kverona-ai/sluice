@@ -162,7 +162,7 @@ impl Workbench {
         self.toggle_entry(group, wf.path, cx);
     }
 
-    pub(crate) fn move_work_file(&mut self, delta: isize, cx: &mut Context<Self>) {
+    pub fn move_work_file(&mut self, delta: isize, cx: &mut Context<Self>) {
         let Some(ch) = self.changes.clone() else { return };
         let rows = work_rows(&ch.status);
         if rows.is_empty() {
