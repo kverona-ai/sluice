@@ -43,6 +43,9 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 <p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿" width="1000"></p>
 <p align="center"><sub>PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿</sub></p>
 
+<p align="center"><img src="docs/assets/screenshot-devices.png" alt="手机伴侣 —— 二维码配对、直连优先 + E2E 中继兜底、已配对设备、含来源设备的放行 / 驳回审计" width="1000"></p>
+<p align="center"><sub>手机伴侣 —— 二维码配对、直连优先 + E2E 中继兜底、已配对设备、含来源设备的放行 / 驳回审计</sub></p>
+
 <p align="center"><img src="docs/assets/screenshot-dark.png" alt="深色主题" width="1000"></p>
 <p align="center"><sub>深色主题</sub></p>
 
@@ -66,6 +69,8 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 | **语法高亮 diff** | tree-sitter 内置 14 种常见语言语法，浅色 / 深色配色 |
 | **Dock 布局** | 面板可拖拽调整，Console 可拆到底部（`⌥⌘6`）；keymap 预设（IDEA / VS Code）+ `keymap.json` 逐条覆盖；worktree 面板（`⌘⇧W`） |
 | **jujutsu 仓库** | `.jj` 工作区用同一套界面：工作副本 diff、`jj commit` / `describe`、change ID、操作日志即时光机 |
+| **手机伴侣通道**（`⌘⇧D`） | 扫二维码一次配对（一次性配对码），同网直连优先、端到端加密中继兜底（`sluice relay serve` 可自托管）；待确认队列、提交图与 diff 只读镜像到手机，放行指令由设备签名、桌面执行，并写入 `<common-dir>/sluice/audit.log`（含放行来源设备）。没有手机时 `sluice pair` / `sluice remote` 可在任意机器上替代 |
+| **移动核心（`crates/ffi`）** | 供 iOS / Android 壳调用的 UniFFI 导出面——`SluiceSession`（打开本地仓库 / 连接桌面）、`RepoView`（日志分页、提交详情、diff）、`ReviewQueue`（`approve` / `reject`）、`EventSink`（`DomainEvent` 回调）；全异步 API，`uniffi-bindgen` 生成 Swift / Kotlin 绑定 |
 | **中 / 英界面** | `⌘⇧L` 切换语言（持久化）；深色 / 浅色主题 `⌘⇧T` |
 | **键盘优先** | IDEA 风格键位：`⌘9` 日志 · `⌘0` 变更 · `⌘B` 分支 · `⌘5` stash · `⌘K` 提交面板 · `⌘↩` 提交 · `Space` 暂存；完整列表见设置（`⌘,`） |
 
@@ -156,7 +161,7 @@ IDEA 风格预设（Windows/Linux 用 `Ctrl` 代替 `⌘`）：`↑/↓/PgUp/PgD
 - ✅ **M2 —— 提交**：行级暂存、提交面板、AI 起草、推拉
 - ✅ **M3 —— 分支**：分支面板、merge / rebase、交互式 rebase、stash、快照、三方冲突解决器、文件历史与 blame、多仓库
 - ✅ **M4 —— AI 桥接**：MCP server（读工具 + propose_* 工具）、一键接入含 hooks、提议-确认队列、会话溯源、askpass、设置 / keymap / 更新检查 / opt-in 遥测——剩余的是 public beta 打包（签名账号）
-- ⏭ **M5 —— 移动伴侣**：iOS / Android 上审查与放行，复用同一 Rust 核心
+- ✅ **M5 —— 移动伴侣（桌面侧 + Rust 核心）**：同步通道（二维码配对、直连优先、E2E 中继兜底、签名放行、含来源设备的审计）与 UniFFI 导出面；iOS / Android 壳为剩余工作
 - ✅ **M6 —— 扩展**：GitHub / GitLab PR 评审页签、jujutsu (jj) 后端
 
 ## 参与贡献

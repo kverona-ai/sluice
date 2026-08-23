@@ -5,7 +5,31 @@ All notable changes to Sluice are recorded here. The format follows
 
 ## [Unreleased]
 
+### Mobile (binding API, `crates/ffi` — SemVer 0.x)
+- First UniFFI export surface (02 §5.5): `SluiceSession` (`open_local`, `pair`, `connect`,
+  `disconnect`, `unpair`, `set_event_sink`), `RepoView` (`summary`, `log`, `commit`, `diff`),
+  `ReviewQueue` (`items`, `refresh`, `approve`, `reject`), callback `EventSink` with
+  `DomainEvent` (Connected / Disconnected / RepoChanged / Proposed / QueueChanged / Decided /
+  Error). Async methods run on tokio (Swift `async`, Kotlin `suspend`); bindings via
+  `cargo run -p sluice-ffi --features bindgen --bin uniffi-bindgen -- generate --library …`.
+  CI smoke: open a repo, read its status, receive one event.
+
 ### Added
+- **Phone companion channel — desktop side** (02 §5.4 / §5.7, 05 §7.1): new `sluice-sync`
+  crate. One-time QR pairing (desktop static X25519 key + 10-minute code), Noise-style
+  handshake with forward secrecy, ChaCha20-Poly1305 frames with replay protection, LAN
+  listener first and an end-to-end encrypted relay fallback (`sluice relay serve`,
+  self-hostable, forwards ciphertext only), trusted-device store with revocation
+  (`⌘⇧D` panel: QR, channel status, devices, relay address, recent decisions). Devices see
+  a read model (repo card, review queue with patch, commit-graph pages, commit detail,
+  diffs); 放行 / 驳回 are Ed25519-signed by the device, carry the item's baseline version
+  (stale → `expired`), are executed by the desktop and appended to
+  `<common-dir>/sluice/audit.log` with the deciding device (also shown in Console).
+  `sluice pair <payload>` / `sluice remote status|queue|approve|reject|log|diff|watch|unpair`
+  act as the phone from any machine.
+- **Proposal baselines** (05 §7.1): every queued proposal records a fingerprint of HEAD + the
+  files it touches; if the repository moved, accepting it answers "expired" instead of
+  executing — on the desktop and from devices alike.
 - **jujutsu backend** (05 §8 capability mapping): `.jj` detected (colocated or standalone —
   the git store is opened through gix), working-copy changes via `jj diff --summary` /
   `jj file show`, no staging UI, commit = `jj commit` / `jj describe`, push via `jj git push`,

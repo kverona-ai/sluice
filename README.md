@@ -57,6 +57,9 @@ rebuilt for the agentic era:
 <p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR review — pull requests from your logged-in gh / glab, local diff, approve / request changes / comment, AI pre-review drafts" width="1000"></p>
 <p align="center"><sub>PR review — pull requests from your logged-in gh / glab, local diff, approve / request changes / comment, AI pre-review drafts</sub></p>
 
+<p align="center"><img src="docs/assets/screenshot-devices.png" alt="Phone companion — QR pairing, LAN-first channel with E2E relay fallback, paired devices, approvals / rejections with the source device" width="1000"></p>
+<p align="center"><sub>Phone companion — QR pairing, LAN-first channel with E2E relay fallback, paired devices, approvals / rejections audited with the source device</sub></p>
+
 <p align="center"><img src="docs/assets/screenshot-dark.png" alt="Dark theme" width="1000"></p>
 <p align="center"><sub>Dark theme</sub></p>
 
@@ -82,6 +85,8 @@ rebuilt for the agentic era:
 | **Syntax-highlighted diffs** | tree-sitter grammars for 14 common languages, light & dark palettes |
 | **Dock layout** | drag-resizable panes, Console docks at the bottom (`⌥⌘6`); keymap presets (IDEA / VS Code) + `keymap.json` overrides; worktrees panel (`⌘⇧W`) |
 | **jujutsu repositories** | `.jj` workspaces open with the same UI: working-copy diff, `jj commit` / `describe`, change ids, op log as the time machine |
+| **Phone companion channel** (`⌘⇧D`) | Pair a phone once by QR (one-time code), LAN direct first with an end-to-end encrypted relay fallback (`sluice relay serve` self-hostable); the review queue, commit graph and diffs are mirrored read-only, approvals are signed by the device, executed by the desktop and written to `<common-dir>/sluice/audit.log` with the source device. `sluice pair` / `sluice remote` stand in for the phone from any machine |
+| **Mobile core (`crates/ffi`)** | UniFFI surface for the iOS / Android shells — `SluiceSession` (open a local repo / connect to a desktop), `RepoView` (log pages, commit detail, diff), `ReviewQueue` (`approve` / `reject`), `EventSink` (`DomainEvent` callbacks); async API, Swift / Kotlin bindings via `uniffi-bindgen` |
 | **Chinese / English UI** | `⌘⇧L` toggles the language (persisted); dark / light theme `⌘⇧T` |
 | **Keyboard-first** | IDEA-style keymap: `⌘9` Log · `⌘0` Changes · `⌘B` branches · `⌘5` stash · `⌘K` commit panel · `⌘↩` commit · `Space` stage · full list in Settings (`⌘,`) |
 
@@ -181,7 +186,7 @@ IDEA-style preset (`Ctrl` instead of `⌘` on Windows/Linux): `↑/↓/PgUp/PgDn
 - ✅ **M4 — AI bridge**: MCP server (read tools + propose_* tools), one-click hookup incl. hooks,
   propose-and-confirm queue, session provenance, askpass, settings / keymap / update check /
   opt-in telemetry — public beta packaging (signing accounts) is the remaining step
-- ⏭ **M5 — Mobile companions**: review & approve from iOS / Android over the same Rust core
+- ✅ **M5 — Mobile companions (desktop side + Rust core)**: sync channel (QR pairing, LAN-first, E2E relay fallback, signed approvals, audit with source device) and the UniFFI export surface; the iOS / Android shells are the remaining work
 - ✅ **M6 — Extensions**: GitHub / GitLab PR review tab, jujutsu (jj) backend
 
 ## Contributing

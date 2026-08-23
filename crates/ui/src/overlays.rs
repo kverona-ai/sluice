@@ -20,6 +20,7 @@ use crate::workbench::{Tab, Workbench, checkbox, section_label};
 #[derive(Clone, Debug, PartialEq)]
 pub enum Overlay {
     Worktrees,
+    Devices,
     Rebase,
     Recent,
     AiConnect,
@@ -660,6 +661,7 @@ impl Workbench {
             Overlay::Stash => self.render_stash(cx).into_any_element(),
             Overlay::Snapshots => self.render_snapshots(cx).into_any_element(),
             Overlay::Settings => self.render_settings(cx).into_any_element(),
+            Overlay::Devices => self.render_devices(cx).into_any_element(),
             Overlay::Push => self.render_push(cx).into_any_element(),
             Overlay::NewBranch { from } => self.render_new_branch(from.clone(), cx).into_any_element(),
             Overlay::Confirm(action) => self.render_confirm(action.clone(), cx).into_any_element(),

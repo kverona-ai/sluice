@@ -20,6 +20,7 @@ pub mod proposals;
 pub mod pulls;
 pub mod rebase;
 pub mod recent;
+pub mod sync;
 pub mod theme;
 pub mod workbench;
 pub mod worktrees;

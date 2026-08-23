@@ -41,6 +41,7 @@ actions!(
         ShowChanges,
         ShowConsole,
         ShowPulls,
+        OpenDevices,
         Refresh,
         FocusSearch,
         Escape,
@@ -196,6 +197,13 @@ pub struct Workbench {
     pub pulls: crate::pulls::PullState,
     pub pull_diff: Option<DiffView>,
     pub pull_comment: Entity<InputState>,
+    // ----- mobile sync channel (M5) -----
+    pub sync: Option<crate::sync::SyncHost>,
+    pub sync_status: sluice_sync::Status,
+    pub sync_devices: Vec<sluice_sync::store::PairedDevice>,
+    pub sync_audit: Vec<sluice_sync::proto::DecisionRecord>,
+    pub sync_qr: Option<(usize, Vec<bool>)>,
+    pub relay_input: Entity<InputState>,
     pub pulls_split: Entity<gpui_component::resizable::ResizableState>,
     pub log_split: Entity<gpui_component::resizable::ResizableState>,
     pub changes_split: Entity<gpui_component::resizable::ResizableState>,
@@ -250,6 +258,8 @@ impl Workbench {
         .detach();
         let worktree_branch =
             cx.new(|cx| InputState::new(window, cx).placeholder(tr("新分支名（如 feat/agent-2）")));
+        let relay_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("中继地址 host:port（可选）")));
         let log_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
         let changes_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
         let dock_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
@@ -366,6 +376,12 @@ impl Workbench {
             pulls: Default::default(),
             pull_diff: None,
             pull_comment,
+            sync: None,
+            sync_status: sluice_sync::Status::default(),
+            sync_devices: Vec::new(),
+            sync_audit: Vec::new(),
+            sync_qr: None,
+            relay_input,
             pulls_split,
             log_split,
             changes_split,
@@ -723,6 +739,7 @@ impl Workbench {
                     Ok(snap) => {
                         this.repo.info = snap.info.clone();
                         this.log = Some(Arc::new(snap));
+                        this.sync_publish();
                         this.log_error = None;
                         this.apply_filter(cx);
                     }
@@ -755,6 +772,7 @@ impl Workbench {
                 match res {
                     Ok(snap) => {
                         this.changes = Some(Arc::new(snap));
+                        this.sync_publish();
                         this.changes_error = None;
                         // keep the open work diff fresh
                         if let Some(wf) = this.work_file.clone() {
@@ -1468,6 +1486,17 @@ impl Workbench {
                 .on_click(cx.listener(|this, _, _, cx| this.open_snapshots(cx))),
             )
             .child(
+                item(
+                    "rail-devices",
+                    "device-mobile",
+                    tr("移动端"),
+                    tr("移动端配对 / 设备 ⌘⇧D"),
+                    !self.sync_status.sessions.is_empty(),
+                    None,
+                )
+                .on_click(cx.listener(|this, _, window, cx| this.open_devices(window, cx))),
+            )
+            .child(
                 div()
                     .mt_auto()
                     .flex()
@@ -1612,6 +1641,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &ShowChanges, _, cx| this.set_tab(Tab::Changes, cx)))
             .on_action(cx.listener(|this, _: &ShowConsole, _, cx| this.set_tab(Tab::Console, cx)))
             .on_action(cx.listener(|this, _: &ShowPulls, _, cx| this.set_tab(Tab::Pulls, cx)))
+            .on_action(cx.listener(|this, _: &OpenDevices, window, cx| this.open_devices(window, cx)))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)))
             .on_action(cx.listener(|this, _: &Escape, window, cx| {

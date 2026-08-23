@@ -66,6 +66,64 @@ enum Command {
     Diagnostics,
     /// Check GitHub Releases for a newer version (version number only).
     Update,
+    /// Pair this machine with a desktop Sluice as a review device — the CLI
+    /// stand-in for the phone (M5 sync channel). Pass the text behind the QR.
+    Pair { payload: String },
+    /// Talk to the paired desktop: queue, approve / reject, log, watch events.
+    Remote {
+        #[command(subcommand)]
+        cmd: RemoteCommand,
+    },
+    /// Self-hosted relay for the sync channel (forwards encrypted frames only).
+    Relay {
+        #[command(subcommand)]
+        cmd: RelayCommand,
+    },
+}
+
+#[derive(Subcommand, Debug)]
+enum RemoteCommand {
+    /// Connection + repo read model.
+    Status,
+    /// Pending proposals waiting for a human.
+    Queue,
+    /// 放行: let the desktop execute proposal <id>.
+    Approve {
+        id: u64,
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    /// 驳回: reject proposal <id>.
+    Reject {
+        id: u64,
+        #[arg(long, default_value = "")]
+        note: String,
+    },
+    /// Commit-graph skeleton page.
+    Log {
+        #[arg(long, default_value_t = 0)]
+        offset: u32,
+        #[arg(long, default_value_t = 30)]
+        limit: u32,
+    },
+    /// Diff of one file (of a commit, or uncommitted when --oid is omitted).
+    Diff {
+        path: String,
+        #[arg(long, default_value = "")]
+        oid: String,
+    },
+    /// Stay connected and print events (proposals, decisions, repo changes).
+    Watch,
+    /// Ask the desktop to forget this device.
+    Unpair,
+}
+
+#[derive(Subcommand, Debug)]
+enum RelayCommand {
+    Serve {
+        #[arg(long, default_value = "0.0.0.0:7788")]
+        listen: String,
+    },
 }
 
 #[derive(Subcommand, Debug)]
@@ -158,6 +216,40 @@ fn main() -> Result<()> {
         Some(Command::SeqEditor { file }) => match file {
             Some(f) => sluice_bridge::rebase::run_seq_editor(&f),
             None => anyhow::bail!("seq-editor needs the todo file path"),
+        },
+        Some(Command::Pair { payload }) => {
+            let client = device_client();
+            let info = client.pair(&payload)?;
+            println!(
+                "paired with {} ({}) via {} — device id {}",
+                info.desktop_name,
+                info.desktop_id,
+                info.via,
+                client.device_id()
+            );
+            let c = client.cache();
+            if let Some(r) = c.repo {
+                println!(
+                    "repo {} @ {} {} · {} pending",
+                    r.name,
+                    r.branch,
+                    r.head_short,
+                    c.queue.len()
+                );
+            }
+            client.disconnect();
+            Ok(())
+        }
+        Some(Command::Remote { cmd }) => run_remote(cmd),
+        Some(Command::Relay { cmd }) => match cmd {
+            RelayCommand::Serve { listen } => {
+                let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+                let addr = sluice_sync::relay::serve(&listen, stop)?;
+                println!("sluice relay listening on {addr} (ctrl-c to stop)");
+                loop {
+                    std::thread::sleep(std::time::Duration::from_secs(3600));
+                }
+            }
         },
         Some(Command::Update) => {
             match sluice_bridge::update::check_latest(env!("CARGO_PKG_VERSION"))? {
@@ -323,6 +415,118 @@ fn dump_log(path: Option<PathBuf>, limit: usize, topo: bool) -> Result<()> {
 struct ShotTarget(gpui::Entity<Workbench>);
 impl gpui::Global for ShotTarget {}
 
+/// The CLI stand-in keeps its device identity under `<config>/.sluice/device/`.
+fn device_client() -> sluice_sync::Client {
+    let dir = sluice_ui::sync::config_dir().join("device");
+    sluice_sync::Client::new(&dir, std::env::consts::OS, env!("CARGO_PKG_VERSION"))
+}
+
+fn run_remote(cmd: RemoteCommand) -> Result<()> {
+    let client = device_client();
+    if let RemoteCommand::Unpair = cmd {
+        let ids: Vec<String> = client.desktops().iter().map(|d| d.desktop_id.clone()).collect();
+        for id in ids {
+            client.unpair(&id)?;
+            println!("unpaired {id}");
+        }
+        return Ok(());
+    }
+    let info = client.connect(None)?;
+    let accept = matches!(cmd, RemoteCommand::Approve { .. });
+    match cmd {
+        RemoteCommand::Status => {
+            println!(
+                "connected to {} ({}) via {}",
+                info.desktop_name, info.desktop_id, info.via
+            );
+            let c = client.refresh()?;
+            match c.repo {
+                Some(r) => println!(
+                    "repo {} · {} @ {} {} · ↑{} ↓{} · {} changed files · {}",
+                    r.name, r.vcs, r.branch, r.head_short, r.ahead, r.behind, r.changed_files, r.head_subject
+                ),
+                None => println!("no repository open on the desktop"),
+            }
+            println!("{} pending proposal(s)", c.queue.len());
+        }
+        RemoteCommand::Queue => {
+            let c = client.refresh()?;
+            if c.queue.is_empty() {
+                println!("queue is empty");
+            }
+            for it in c.queue {
+                println!(
+                    "#{} [{}] {} — {} · {} · v{}",
+                    it.id, it.kind, it.title, it.client, it.state, it.version
+                );
+                if !it.files.is_empty() {
+                    println!("    files: {}", it.files.join(", "));
+                }
+                if let Some(p) = it.patch {
+                    for l in p.lines().take(40) {
+                        println!("    {l}");
+                    }
+                }
+            }
+        }
+        RemoteCommand::Approve { id, note } | RemoteCommand::Reject { id, note } => {
+            let c = client.refresh()?;
+            let version = c
+                .queue
+                .iter()
+                .find(|i| i.id == id)
+                .map(|i| i.version.clone())
+                .ok_or_else(|| anyhow::anyhow!("proposal #{id} is not in the queue"))?;
+            let d = client.decide(id, &version, accept, &note)?;
+            println!(
+                "#{} {} → {}: {}",
+                d.id,
+                if d.accepted { "approve" } else { "reject" },
+                d.outcome,
+                d.detail
+            );
+        }
+        RemoteCommand::Log { offset, limit } => {
+            let (total, rows) = client.log(offset, limit)?;
+            for r in rows {
+                println!(
+                    "{} {}{} {} · {}",
+                    r.short,
+                    r.subject,
+                    r.ai_badge.map(|b| format!(" [{b}]")).unwrap_or_default(),
+                    r.author,
+                    if r.refs.is_empty() {
+                        String::new()
+                    } else {
+                        r.refs.join(", ")
+                    }
+                );
+            }
+            println!("({total} loaded)");
+        }
+        RemoteCommand::Diff { path, oid } => {
+            let (patch, truncated) = client.diff(&oid, &path)?;
+            print!("{patch}");
+            if truncated {
+                println!("… (truncated)");
+            }
+        }
+        RemoteCommand::Watch => {
+            println!("watching {} — ctrl-c to stop", info.desktop_name);
+            client.set_sink(Some(std::sync::Arc::new(|ev| {
+                println!("{}", serde_json::to_string(&ev).unwrap_or_default());
+            })));
+            while client.is_connected() {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+            println!("disconnected");
+        }
+        RemoteCommand::Unpair => unreachable!(),
+    }
+    client.disconnect();
+    Ok(())
+}
+
 fn run_app(path: Option<PathBuf>) -> Result<()> {
     sluice_bridge::telemetry::install_crash_hook();
     let path = resolve_path(path)?;
@@ -415,9 +619,13 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
             let shot_open = std::env::var("SLUICE_SCREENSHOT_OPEN").is_ok();
             let handle = cx
                 .open_window(options, |window, cx| {
+                    let sync = sluice_ui::sync::start(env!("CARGO_PKG_VERSION"));
                     let workbench = cx.new(|cx| {
                         let mut w = Workbench::new(repo, window, cx);
                         w.attach_ipc(ipc_rx, cx);
+                        if let Some((host, rx)) = sync {
+                            w.attach_sync(host, rx, cx);
+                        }
                         w
                     });
                     let wb = workbench.clone();
@@ -450,8 +658,10 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                             if shot_open {
                                 w.move_work_file(1, cx);
                             }
-                            if std::env::var("SLUICE_SCREENSHOT_OVERLAY").as_deref() == Ok("snapshots") {
-                                w.open_snapshots(cx);
+                            match std::env::var("SLUICE_SCREENSHOT_OVERLAY").as_deref() {
+                                Ok("snapshots") => w.open_snapshots(cx),
+                                Ok("devices") => w.open_devices(window, cx),
+                                _ => {}
                             }
                             cx.notify();
                         });

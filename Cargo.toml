@@ -11,6 +11,8 @@ members = [
     "crates/syntax",
     "crates/ui",
     "crates/app",
+    "crates/sync",
+    "crates/ffi",
 ]
 
 [workspace.package]
@@ -32,6 +34,7 @@ sluice-watch = { path = "crates/watch" }
 sluice-bridge = { path = "crates/bridge" }
 sluice-syntax = { path = "crates/syntax" }
 sluice-ui = { path = "crates/ui" }
+sluice-sync = { path = "crates/sync" }
 
 # --- UI (GPUI pinned; runtime_shaders avoids needing the Xcode Metal toolchain at build time) ---
 gpui = { version = "0.2.2", features = ["runtime_shaders"] }

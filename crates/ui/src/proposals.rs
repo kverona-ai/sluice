@@ -1,6 +1,10 @@
-//! The propose-and-confirm queue (03 §3): proposals arrive over IPC from
-//! `sluice mcp serve`, wait here for a human, and are executed only on Accept.
-//! Also hosts the askpass dialog fed by `sluice askpass`.
+//! The propose-and-confirm queue (03 §3, 05 §7.1): proposals arrive over IPC from
+//! `sluice mcp serve`, wait here for a human — on this desktop or on a paired
+//! phone through the sync channel — and are executed only on Accept. Every
+//! decision is appended to `<common-dir>/sluice/audit.log` with who decided
+//! (本机 / 设备名) and a proposal expires when the repository moved away from
+//! the baseline it was made against. Also hosts the askpass dialog fed by
+//! `sluice askpass`.
 
 use crate::i18n::tr;
 use std::sync::mpsc;
@@ -13,6 +17,8 @@ use gpui::{
 use gpui_component::input::Input;
 use sluice_backend_cli::CommitOptions;
 use sluice_bridge::ipc::{Decision, Inbound, Proposal, ProposalKind};
+use sluice_sync::proto::{DecisionRecord, DeviceInfo, DomainEvent, ReviewItem};
+use sluice_sync::server::DecisionOutcome;
 
 use crate::icons::icon_b;
 use crate::overlays::Overlay;
@@ -23,6 +29,123 @@ pub struct PendingProposal {
     pub proposal: Proposal,
     pub reply: Option<mpsc::Sender<Decision>>,
     pub busy: bool,
+    /// Fingerprint of HEAD + the files the proposal touches, taken on arrival
+    /// (05 §7.1 基线指纹); empty until computed.
+    pub baseline: String,
+    /// Unified diff of what a commit proposal would include (for reviewers on a phone).
+    pub patch: Option<String>,
+    /// Files touched (commit proposals), computed with the baseline.
+    pub files: Vec<String>,
+    /// Set when a device is waiting for the outcome of its decision.
+    pub on_done: Option<mpsc::Sender<DecisionOutcome>>,
+}
+
+/// Who released / rejected a proposal (05 §7.1 决定人).
+#[derive(Clone, Debug, PartialEq)]
+pub enum DecisionSource {
+    Desktop,
+    Device(DeviceInfo),
+}
+
+impl DecisionSource {
+    pub fn key(&self) -> String {
+        match self {
+            DecisionSource::Desktop => "desktop".into(),
+            DecisionSource::Device(d) => format!("device:{}", d.id),
+        }
+    }
+    pub fn name(&self) -> String {
+        match self {
+            DecisionSource::Desktop => "desktop".into(),
+            DecisionSource::Device(d) => d.name.clone(),
+        }
+    }
+}
+
+impl PendingProposal {
+    pub fn kind_key(&self) -> &'static str {
+        match self.proposal.kind {
+            ProposalKind::Commit { .. } => "commit",
+            ProposalKind::Branch { .. } => "branch",
+            ProposalKind::Push { .. } => "push",
+        }
+    }
+
+    /// The read-model row a paired device sees.
+    pub fn review_item(&self) -> ReviewItem {
+        let detail = match &self.proposal.kind {
+            ProposalKind::Commit { message, .. } => message.clone(),
+            ProposalKind::Branch { name, checkout } => {
+                format!("{name}{}", if *checkout { " (checkout)" } else { "" })
+            }
+            ProposalKind::Push { set_upstream } => {
+                if *set_upstream {
+                    "push -u".into()
+                } else {
+                    "push".into()
+                }
+            }
+        };
+        ReviewItem {
+            id: self.proposal.id,
+            client: self.proposal.client.clone(),
+            kind: self.kind_key().to_string(),
+            title: self.proposal.kind.title(),
+            detail,
+            files: self.files.clone(),
+            patch: self.patch.clone(),
+            received_at: self.proposal.received_at,
+            version: self.baseline.clone(),
+            state: if self.busy { "busy" } else { "pending" }.to_string(),
+        }
+    }
+}
+
+/// Baseline fingerprint + patch + file list of a proposal (blocking; background).
+fn snapshot_proposal(
+    cli: &sluice_backend_cli::GitCli,
+    kind: &ProposalKind,
+) -> (String, Option<String>, Vec<String>) {
+    let head = cli
+        .run_read(&["rev-parse", "HEAD"])
+        .map(|o| o.stdout_str().trim().to_string())
+        .unwrap_or_default();
+    match kind {
+        ProposalKind::Commit { paths, .. } => {
+            let mut args: Vec<String> = vec!["diff".into(), "HEAD".into(), "--".into()];
+            let mut status_args: Vec<String> = vec!["status".into(), "--porcelain".into(), "--".into()];
+            if let Some(p) = paths {
+                args.extend(p.iter().cloned());
+                status_args.extend(p.iter().cloned());
+            }
+            let refs: Vec<&str> = args.iter().map(String::as_str).collect();
+            let patch = cli
+                .run_read(&refs)
+                .map(|o| o.stdout_str().to_string())
+                .unwrap_or_default();
+            let refs: Vec<&str> = status_args.iter().map(String::as_str).collect();
+            let status = cli
+                .run_read(&refs)
+                .map(|o| o.stdout_str().to_string())
+                .unwrap_or_default();
+            let files: Vec<String> = match paths {
+                Some(p) => p.clone(),
+                None => status
+                    .lines()
+                    .filter_map(|l| l.get(3..).map(|s| s.trim().to_string()))
+                    .filter(|s| !s.is_empty())
+                    .collect(),
+            };
+            let fp = crate::sync::short_hash(&(head.as_str(), patch.as_str(), status.as_str()));
+            let mut p = patch;
+            if p.len() > 64 * 1024 {
+                p.truncate(64 * 1024);
+                p.push_str("\n… (truncated)\n");
+            }
+            (fp, (!p.is_empty()).then_some(p), files)
+        }
+        _ => (crate::sync::short_hash(&head), None, Vec::new()),
+    }
 }
 
 impl Workbench {
@@ -34,13 +157,41 @@ impl Workbench {
                     Inbound::Proposal { proposal, reply } => {
                         let title = proposal.kind.title();
                         let client = proposal.client.clone();
+                        let id = proposal.id;
+                        let kind = proposal.kind.clone();
                         this.proposals.push(PendingProposal {
                             proposal,
                             reply: Some(reply),
                             busy: false,
+                            baseline: String::new(),
+                            patch: None,
+                            files: Vec::new(),
+                            on_done: None,
                         });
                         this.repo.console.note("proposal", format!("{client}: {title}"));
                         this.toast(tf!("收到 {} 的提议：{}（⌘⇧P 查看队列）", client, title), cx);
+                        this.sync_publish();
+                        if let Some(cli) = this.repo.cli.clone() {
+                            cx.spawn(async move |this, cx| {
+                                let snap = cx
+                                    .background_spawn(async move { snapshot_proposal(&cli, &kind) })
+                                    .await;
+                                this.update(cx, |this, cx| {
+                                    if let Some(p) = this.proposals.iter_mut().find(|p| p.proposal.id == id) {
+                                        p.baseline = snap.0;
+                                        p.patch = snap.1;
+                                        p.files = snap.2;
+                                        let item = p.review_item();
+                                        let pending = this.proposals.len() as u32;
+                                        this.sync_publish();
+                                        this.sync_event(DomainEvent::Proposed { item, pending });
+                                    }
+                                    cx.notify();
+                                })
+                                .ok();
+                            })
+                            .detach();
+                        }
                         cx.notify();
                     }
                     Inbound::Askpass { prompt, reply } => {
@@ -63,38 +214,168 @@ impl Workbench {
     }
 
     pub(crate) fn decide_proposal(&mut self, ix: usize, accept: bool, cx: &mut Context<Self>) {
+        self.decide_proposal_from(ix, accept, DecisionSource::Desktop, String::new(), None, cx);
+    }
+
+    /// Append to `<common-dir>/sluice/audit.log`, echo to Console, notify devices.
+    fn record_decision(&mut self, rec: DecisionRecord) {
+        let path = crate::sync::common_dir(&self.repo.info);
+        if let Err(e) = sluice_sync::store::append_audit(&path, &rec) {
+            self.repo
+                .console
+                .note("audit", format!("cannot write audit.log: {e:#}"));
+        }
+        self.repo.console.note(
+            "audit",
+            format!(
+                "{} · {} · by {}{}{}",
+                rec.decision,
+                rec.title,
+                rec.source_label(),
+                if rec.note.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · “{}”", rec.note)
+                },
+                if rec.detail.is_empty() {
+                    String::new()
+                } else {
+                    format!(" · {}", rec.detail)
+                }
+            ),
+        );
+        let pending = self.proposals.len() as u32;
+        self.sync_event(DomainEvent::Decided {
+            id: rec.proposal_id,
+            accepted: rec.decision == "approve",
+            outcome: if rec.decision == "expire" {
+                "expired".into()
+            } else if rec.decision == "approve" {
+                if rec.commit.is_empty() && rec.detail.starts_with("execution failed") {
+                    "failed".into()
+                } else {
+                    "done".into()
+                }
+            } else {
+                "rejected".into()
+            },
+            detail: rec.detail.clone(),
+            source: rec.source.clone(),
+            source_name: rec.source_name.clone(),
+            pending,
+        });
+        self.sync_publish();
+    }
+
+    /// Decide a queue item on behalf of `source` (this desktop or a paired device).
+    /// `note` is the reviewer's comment; `on_done` gets the outcome once executed.
+    pub(crate) fn decide_proposal_from(
+        &mut self,
+        ix: usize,
+        accept: bool,
+        source: DecisionSource,
+        note: String,
+        on_done: Option<mpsc::Sender<DecisionOutcome>>,
+        cx: &mut Context<Self>,
+    ) {
         let Some(entry) = self.proposals.get_mut(ix) else {
+            if let Some(d) = on_done {
+                let _ = d.send(DecisionOutcome {
+                    outcome: "unknown".into(),
+                    detail: "no such proposal".into(),
+                });
+            }
             return;
         };
         if entry.busy {
+            if let Some(d) = on_done {
+                let _ = d.send(DecisionOutcome {
+                    outcome: "failed".into(),
+                    detail: "already executing".into(),
+                });
+            }
             return;
         }
         let Some(reply) = entry.reply.take() else { return };
+        let title = entry.proposal.kind.title();
+        let kind_key = entry.kind_key().to_string();
+        let agent = entry.proposal.client.clone();
+        let payload_hash =
+            crate::sync::short_hash(&serde_json::to_string(&entry.proposal.kind).unwrap_or_default());
+        let id = entry.proposal.id;
+        let now = sluice_sync::pairing::now();
         if !accept {
             let _ = reply.send(Decision::Rejected {
-                reason: "rejected by the user in Sluice".into(),
+                reason: format!(
+                    "rejected by the user in Sluice ({}){}",
+                    source.name(),
+                    if note.is_empty() {
+                        String::new()
+                    } else {
+                        format!(": {note}")
+                    }
+                ),
             });
-            let title = entry.proposal.kind.title();
             self.proposals.remove(ix);
-            self.repo.console.note("proposal rejected", title.clone());
-            self.toast(tf!("已拒绝：{}", title), cx);
+            self.record_decision(DecisionRecord {
+                at: now,
+                proposal_id: id,
+                agent,
+                kind: kind_key,
+                title: title.clone(),
+                payload_hash,
+                decision: "reject".into(),
+                source: source.key(),
+                source_name: source.name(),
+                note,
+                detail: String::new(),
+                commit: String::new(),
+            });
+            if let Some(d) = on_done {
+                let _ = d.send(DecisionOutcome {
+                    outcome: "rejected".into(),
+                    detail: "rejected".into(),
+                });
+            }
+            self.toast(
+                match &source {
+                    DecisionSource::Desktop => tf!("已拒绝：{}", title),
+                    DecisionSource::Device(dv) => tf!("已拒绝（来自 {}）：{}", dv.name, title),
+                },
+                cx,
+            );
             cx.notify();
             return;
         }
         entry.busy = true;
-        let id = entry.proposal.id;
+        entry.on_done = on_done;
         let kind = entry.proposal.kind.clone();
+        let baseline = entry.baseline.clone();
         let Some(cli) = self.repo.cli.clone() else {
             let _ = reply.send(Decision::Rejected {
                 reason: "bare repository".into(),
             });
+            if let Some(d) = entry.on_done.take() {
+                let _ = d.send(DecisionOutcome {
+                    outcome: "failed".into(),
+                    detail: "bare repository".into(),
+                });
+            }
             return;
         };
         cx.notify();
         cx.spawn(async move |this, cx| {
+            let kind2 = kind.clone();
             let res: anyhow::Result<String> = cx
                 .background_spawn(async move {
-                    match kind {
+                    // 05 §7.1: baseline moved → expired, never executed.
+                    if !baseline.is_empty() {
+                        let (now_fp, _, _) = snapshot_proposal(&cli, &kind2);
+                        if now_fp != baseline {
+                            anyhow::bail!("EXPIRED");
+                        }
+                    }
+                    match kind2 {
                         ProposalKind::Commit { message, paths } => {
                             match paths {
                                 Some(p) => {
@@ -121,9 +402,13 @@ impl Workbench {
                 })
                 .await;
             this.update(cx, |this, cx| {
+                let expired = matches!(&res, Err(e) if e.to_string() == "EXPIRED");
                 let decision = match &res {
                     Ok(detail) => Decision::Accepted {
                         detail: detail.clone(),
+                    },
+                    Err(_) if expired => Decision::Rejected {
+                        reason: "expired: the repository changed since the proposal was made".into(),
                     },
                     Err(e) => Decision::Rejected {
                         reason: format!("execution failed: {e:#}"),
@@ -131,19 +416,57 @@ impl Workbench {
                 };
                 let _ = reply.send(decision);
                 if let Some(pos) = this.proposals.iter().position(|p| p.proposal.id == id) {
-                    let title = this.proposals[pos].proposal.kind.title();
-                    this.proposals.remove(pos);
-                    match res {
-                        Ok(detail) => {
-                            this.repo
-                                .console
-                                .note("proposal accepted", format!("{title} → {detail}"));
-                            this.toast(tf!("已执行：{} · {}", title, detail), cx);
-                        }
-                        Err(e) => {
-                            let msg = format!("{e:#}");
-                            this.toast(tf!("执行失败：{}", msg.lines().next().unwrap_or("")), cx)
-                        }
+                    let mut entry = this.proposals.remove(pos);
+                    let title = entry.proposal.kind.title();
+                    let (outcome, detail, commit) = match &res {
+                        Ok(detail) => (
+                            "done".to_string(),
+                            detail.clone(),
+                            detail.strip_prefix("committed ").unwrap_or("").to_string(),
+                        ),
+                        Err(_) if expired => (
+                            "expired".to_string(),
+                            "baseline changed".to_string(),
+                            String::new(),
+                        ),
+                        Err(e) => (
+                            "failed".to_string(),
+                            format!("execution failed: {e:#}"),
+                            String::new(),
+                        ),
+                    };
+                    if let Some(d) = entry.on_done.take() {
+                        let _ = d.send(DecisionOutcome {
+                            outcome: outcome.clone(),
+                            detail: detail.clone(),
+                        });
+                    }
+                    this.record_decision(DecisionRecord {
+                        at: now,
+                        proposal_id: id,
+                        agent,
+                        kind: kind_key,
+                        title: title.clone(),
+                        payload_hash,
+                        decision: if expired {
+                            "expire".into()
+                        } else {
+                            "approve".into()
+                        },
+                        source: source.key(),
+                        source_name: source.name(),
+                        note,
+                        detail: detail.clone(),
+                        commit,
+                    });
+                    let by = match &source {
+                        DecisionSource::Desktop => String::new(),
+                        DecisionSource::Device(dv) => format!("（来自 {}）", dv.name),
+                    };
+                    match outcome.as_str() {
+                        "done" => this.toast(tf!("已执行{}：{} · {}", by, title, detail), cx),
+                        "expired" => this.toast(tf!("提议已过期：{} — 仓库状态已变化，未执行", title), cx),
+                        _ => this.toast(tf!("执行失败：{}", detail.lines().next().unwrap_or("")), cx),
                     }
                 }
                 this.refresh(cx);

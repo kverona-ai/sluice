@@ -307,6 +307,12 @@ pub const IDEA: &[Entry] = &[
         nav: false,
     },
     Entry {
+        action: "OpenDevices",
+        label: "移动端配对 / 设备",
+        keys: &["cmd-shift-d", "ctrl-shift-d"],
+        nav: false,
+    },
+    Entry {
         action: "ToggleConsoleDock",
         label: "Console 拆分到底部 / 并回",
         keys: &["cmd-alt-6", "ctrl-alt-6"],
@@ -374,6 +380,7 @@ fn make(action: &str, keys: &str, nav: bool) -> Option<KeyBinding> {
         "ShowChanges" => KeyBinding::new(keys, crate::workbench::ShowChanges, ctx),
         "ShowConsole" => KeyBinding::new(keys, crate::workbench::ShowConsole, ctx),
         "ShowPulls" => KeyBinding::new(keys, crate::workbench::ShowPulls, ctx),
+        "OpenDevices" => KeyBinding::new(keys, crate::workbench::OpenDevices, ctx),
         "Refresh" => KeyBinding::new(keys, crate::workbench::Refresh, ctx),
         "FocusSearch" => KeyBinding::new(keys, crate::workbench::FocusSearch, ctx),
         "FocusCommit" => KeyBinding::new(keys, crate::workbench::FocusCommit, ctx),

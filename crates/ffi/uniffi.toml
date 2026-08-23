@@ -1,0 +1,13 @@
+# Binding generation settings (02 §5.5). Generate with:
+#   cargo build -p sluice-ffi --release
+#   cargo run -p sluice-ffi --features bindgen --bin uniffi-bindgen -- \
+#       generate --library target/release/libsluice_ffi.dylib --language swift  --out-dir out/swift
+#   cargo run -p sluice-ffi --features bindgen --bin uniffi-bindgen -- \
+#       generate --library target/release/libsluice_ffi.so    --language kotlin --out-dir out/kotlin
+[bindings.swift]
+module_name = "SluiceCore"
+ffi_module_name = "SluiceCoreFFI"
+
+[bindings.kotlin]
+package_name = "dev.sluice.core"
+cdylib_name = "sluice_ffi"
