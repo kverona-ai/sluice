@@ -50,7 +50,9 @@ impl Workbench {
     }
 
     pub(crate) fn render_log(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let center: gpui::AnyElement = if self.commit_diff.is_some() {
+        let center: gpui::AnyElement = if self.file_view.is_some() {
+            self.render_file_view(cx).into_any_element()
+        } else if self.commit_diff.is_some() {
             self.render_diff_view(false, cx).into_any_element()
         } else {
             self.render_log_center(window, cx).into_any_element()
@@ -906,6 +908,7 @@ impl Workbench {
             return panel.child(div().text_size(px(12.5)).text_color(t.muted).child(msg));
         };
         let d = &detail.detail;
+        let detail_sha = d.commit.id.clone();
         let files = &detail.changes;
         let c = &d.commit;
         let refs_text = self
@@ -1056,6 +1059,8 @@ impl Workbench {
             };
             let is_open = open_path.as_deref() == Some(f.path.as_str());
             let change = f.clone();
+            let ctx_path = f.path.clone();
+            let ctx_sha = detail_sha.clone();
             list = list.child(
                 div()
                     .id(("file", i))
@@ -1071,6 +1076,19 @@ impl Workbench {
                     .when(is_open, |d| d.bg(t.sel))
                     .when(!is_open, |d| d.hover(move |s| s.bg(t.ink_05)))
                     .on_click(cx.listener(move |this, _, _, cx| this.open_commit_file(change.clone(), cx)))
+                    .on_mouse_down(
+                        gpui::MouseButton::Right,
+                        cx.listener(move |this, ev: &MouseDownEvent, _, cx| {
+                            this.show_ctx_menu(
+                                ev,
+                                crate::overlays::CtxTarget::DetailFile {
+                                    path: ctx_path.clone(),
+                                    sha: ctx_sha.clone(),
+                                },
+                                cx,
+                            )
+                        }),
+                    )
                     .child(
                         div()
                             .w(px(13.))

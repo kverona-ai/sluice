@@ -467,7 +467,9 @@ impl Workbench {
             self.commit_msg.update(cx, |s, cx| s.set_value("", window, cx));
         }
         let t = self.theme;
-        let right: gpui::AnyElement = if self.work_diff.is_some() {
+        let right: gpui::AnyElement = if self.file_view.is_some() {
+            self.render_file_view(cx).into_any_element()
+        } else if self.work_diff.is_some() {
             self.render_work_diff_pane(cx).into_any_element()
         } else {
             div()

@@ -97,6 +97,8 @@ pub enum CtxTarget {
         staged: bool,
         untracked: bool,
     },
+    /// A file row in the commit details pane.
+    DetailFile { path: String, sha: Oid },
 }
 
 const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
@@ -109,6 +111,8 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("Push 对话框", "⌘⇧K", "Ctrl+Shift+K"),
     ("搜索提交", "⌘F", "Ctrl+F"),
     ("作者过滤下拉", "⌘U", "Ctrl+U"),
+    ("文件历史（选中文件）", "⌘⇧H", "Ctrl+Shift+H"),
+    ("Blame（选中文件）", "⌥⌘B", "Ctrl+Alt+B"),
     ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
     ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
     ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
@@ -1443,6 +1447,27 @@ impl Workbench {
                     ));
                 }
             }
+            CtxTarget::DetailFile { path, sha } => {
+                items.push(("copy", "复制路径", MenuAct::CopyPath(path.clone()), false));
+                items.push((
+                    "clock-counter-clockwise",
+                    "文件历史",
+                    MenuAct::FileHistory(path.clone()),
+                    false,
+                ));
+                items.push((
+                    "eye",
+                    "Blame（此提交）",
+                    MenuAct::Blame(path.clone(), Some(sha.to_string())),
+                    false,
+                ));
+                items.push((
+                    "eye",
+                    "Blame（工作区）",
+                    MenuAct::Blame(path.clone(), None),
+                    false,
+                ));
+            }
             CtxTarget::WorkFile {
                 path,
                 staged,
@@ -1450,6 +1475,20 @@ impl Workbench {
                 ..
             } => {
                 items.push(("copy", "复制路径", MenuAct::CopyPath(path.clone()), false));
+                items.push((
+                    "clock-counter-clockwise",
+                    "文件历史",
+                    MenuAct::FileHistory(path.clone()),
+                    false,
+                ));
+                if !*untracked {
+                    items.push((
+                        "eye",
+                        "Blame（工作区）",
+                        MenuAct::Blame(path.clone(), None),
+                        false,
+                    ));
+                }
                 if *staged {
                     items.push(("arrow-line-up", "取消暂存", MenuAct::Unstage(path.clone()), false));
                 } else {
@@ -1591,6 +1630,10 @@ impl Workbench {
                     cx,
                 );
             }
+            MenuAct::FileHistory(p) => {
+                self.open_file_view(p, None, crate::file_view::FileViewMode::History, cx)
+            }
+            MenuAct::Blame(p, rev) => self.open_file_view(p, rev, crate::file_view::FileViewMode::Blame, cx),
             MenuAct::Stage(p) => self.stage_paths(vec![p], cx),
             MenuAct::Unstage(p) => self.unstage_paths(vec![p], cx),
             MenuAct::Discard {
@@ -1690,6 +1733,8 @@ enum MenuAct {
         staged: bool,
         untracked: bool,
     },
+    FileHistory(String),
+    Blame(String, Option<String>),
 }
 
 #[allow(dead_code)]

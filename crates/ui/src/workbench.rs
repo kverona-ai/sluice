@@ -20,6 +20,7 @@ use sluice_domain::{ChangesSnapshot, DetailSnapshot, LogFilter, LogSnapshot, Rep
 use sluice_watch::RepoWatcher;
 
 use crate::diff_view::DiffView;
+use crate::file_view::FileView;
 use crate::icons::{icon, icon_b};
 use crate::overlays::{CtxMenu, Overlay};
 use crate::theme::{FONT_BODY, FONT_HEADING, Theme};
@@ -54,6 +55,8 @@ actions!(
         ToggleTheme,
         OpenUserFilter,
         OpenDateFilter,
+        OpenFileHistory,
+        OpenBlame,
         StageAll,
         UnstageAll,
         ToggleSelected,
@@ -140,6 +143,7 @@ pub struct Workbench {
     pub sidebar_hidden: bool,
     pub rail_expanded: bool,
     pub overlay: Option<Overlay>,
+    pub file_view: Option<FileView>,
     pub ctx_menu: Option<CtxMenu>,
     pub branch_filter: Entity<InputState>,
     pub new_branch_name: Entity<InputState>,
@@ -239,6 +243,7 @@ impl Workbench {
             sidebar_hidden: false,
             rail_expanded: false,
             overlay: None,
+            file_view: None,
             ctx_menu: None,
             branch_filter,
             new_branch_name,
@@ -492,6 +497,31 @@ impl Workbench {
         }
     }
 
+    /// Keyboard entry for file history / blame: acts on the file currently open or
+    /// selected (work file in Changes, open diff or first changed file in Log).
+    pub fn file_action(&mut self, mode: crate::file_view::FileViewMode, cx: &mut Context<Self>) {
+        let (path, rev) = match self.tab {
+            Tab::Changes => (self.work_file.as_ref().map(|w| w.path.clone()), None),
+            _ => {
+                let sha = self.detail.as_ref().map(|d| d.detail.commit.id.to_string());
+                let path = self
+                    .commit_diff
+                    .as_ref()
+                    .map(|dv| dv.change.path.clone())
+                    .or_else(|| {
+                        self.detail
+                            .as_ref()
+                            .and_then(|d| d.changes.first().map(|c| c.path.clone()))
+                    });
+                (path, sha)
+            }
+        };
+        match path {
+            Some(p) => self.open_file_view(p, rev, mode, cx),
+            None => self.toast("先选中一个文件（提交详情里的文件或本地变更）", cx),
+        }
+    }
+
     /// Switch between the light and dark Broadsheet palettes (prototype THEMES).
     pub fn toggle_theme(&mut self, cx: &mut Context<Self>) {
         self.theme = if self.theme.is_dark {
@@ -619,6 +649,12 @@ impl Workbench {
     }
 
     pub fn close_diff(&mut self, cx: &mut Context<Self>) {
+        if self.file_view.is_some() {
+            self.file_view = None;
+            self.popup = None;
+            cx.notify();
+            return;
+        }
         match self.tab {
             Tab::Log => self.commit_diff = None,
             Tab::Changes => {
@@ -912,6 +948,26 @@ impl Workbench {
             .border_r_1()
             .border_color(t.line_55)
             .child(
+                rail_item(
+                    "rail-expand",
+                    &t,
+                    if expanded { "caret-left" } else { "caret-right" },
+                    "收起",
+                    if expanded {
+                        "收起工具栏"
+                    } else {
+                        "展开工具栏（图标旁显示说明）"
+                    },
+                    false,
+                    expanded,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.rail_expanded = !this.rail_expanded;
+                    cx.notify();
+                })),
+            )
+            .child(
                 item(
                     "rail-log",
                     "git-branch",
@@ -1009,26 +1065,6 @@ impl Workbench {
                             .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
                     ),
             )
-            .child(
-                rail_item(
-                    "rail-expand",
-                    &t,
-                    if expanded { "caret-left" } else { "caret-right" },
-                    "收起",
-                    if expanded {
-                        "收起工具栏"
-                    } else {
-                        "展开工具栏（图标旁显示说明）"
-                    },
-                    false,
-                    expanded,
-                    None,
-                )
-                .on_click(cx.listener(|this, _, _, cx| {
-                    this.rail_expanded = !this.rail_expanded;
-                    cx.notify();
-                })),
-            )
     }
 
     fn render_toast(&self) -> Option<impl IntoElement> {
@@ -1089,6 +1125,12 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
             .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
+            .on_action(cx.listener(|this, _: &OpenFileHistory, _, cx| {
+                this.file_action(crate::file_view::FileViewMode::History, cx)
+            }))
+            .on_action(cx.listener(|this, _: &OpenBlame, _, cx| {
+                this.file_action(crate::file_view::FileViewMode::Blame, cx)
+            }))
             .on_action(cx.listener(|this, _: &OpenUserFilter, _, cx| {
                 this.tab = Tab::Log;
                 this.popup = Some((Popup::Users, gpui::point(px(620.), px(64.))));

@@ -7,6 +7,7 @@ pub mod assets;
 pub mod changes;
 pub mod console;
 pub mod diff_view;
+pub mod file_view;
 pub mod icons;
 pub mod log;
 pub mod overlays;
@@ -70,6 +71,10 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-shift-k", workbench::OpenPush, ctx),
         KeyBinding::new("cmd-shift-t", workbench::ToggleTheme, ctx),
         KeyBinding::new("cmd-u", workbench::OpenUserFilter, ctx),
+        KeyBinding::new("cmd-shift-h", workbench::OpenFileHistory, ctx),
+        KeyBinding::new("ctrl-shift-h", workbench::OpenFileHistory, ctx),
+        KeyBinding::new("cmd-alt-b", workbench::OpenBlame, ctx),
+        KeyBinding::new("ctrl-alt-b", workbench::OpenBlame, ctx),
         KeyBinding::new("ctrl-u", workbench::OpenUserFilter, ctx),
         KeyBinding::new("cmd-alt-d", workbench::OpenDateFilter, ctx),
         KeyBinding::new("ctrl-alt-d", workbench::OpenDateFilter, ctx),

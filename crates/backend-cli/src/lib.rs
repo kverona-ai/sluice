@@ -29,6 +29,73 @@ pub struct StashEntry {
 }
 
 #[derive(Clone, Debug)]
+pub struct FileHistoryEntry {
+    pub sha: String,
+    pub author: String,
+    pub time: i64,
+    pub subject: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct BlameLine {
+    pub sha: String,
+    pub author: String,
+    pub time: i64,
+    pub summary: String,
+    pub line_no: usize,
+    pub text: String,
+}
+
+/// Parse `git blame --porcelain` output. Per-commit metadata only appears the
+/// first time a commit is seen, so it is cached while scanning.
+pub fn parse_blame_porcelain(out: &str) -> Vec<BlameLine> {
+    use std::collections::HashMap;
+    #[derive(Default, Clone)]
+    struct Meta {
+        author: String,
+        time: i64,
+        summary: String,
+    }
+    let mut metas: HashMap<String, Meta> = HashMap::new();
+    let mut lines = Vec::new();
+    let mut cur_sha = String::new();
+    let mut cur_line = 0usize;
+    for raw in out.lines() {
+        if let Some(text) = raw.strip_prefix('\t') {
+            let m = metas.get(&cur_sha).cloned().unwrap_or_default();
+            lines.push(BlameLine {
+                sha: cur_sha.clone(),
+                author: m.author,
+                time: m.time,
+                summary: m.summary,
+                line_no: cur_line,
+                text: text.to_string(),
+            });
+            continue;
+        }
+        let mut it = raw.splitn(2, ' ');
+        let key = it.next().unwrap_or("");
+        let val = it.next().unwrap_or("");
+        if key.len() == 40 && key.bytes().all(|b| b.is_ascii_hexdigit()) {
+            cur_sha = key.to_string();
+            // "<sha> <orig_line> <final_line> [<group_len>]"
+            cur_line = val.split(' ').nth(1).and_then(|x| x.parse().ok()).unwrap_or(0);
+            metas.entry(cur_sha.clone()).or_default();
+            continue;
+        }
+        if let Some(m) = metas.get_mut(&cur_sha) {
+            match key {
+                "author" => m.author = val.to_string(),
+                "author-time" => m.time = val.parse().unwrap_or(0),
+                "summary" => m.summary = val.to_string(),
+                _ => {}
+            }
+        }
+    }
+    lines
+}
+
+#[derive(Clone, Debug)]
 pub struct SnapshotEntry {
     pub refname: String,
     pub sha: String,
@@ -560,6 +627,49 @@ impl GitCli {
             .map(|_| ())
     }
 
+    // ----- file history / blame (M3) ---------------------------------------
+
+    /// `git log --follow` for one path (rename-aware). Read-only, echoed to the Console.
+    pub fn file_history(&self, path: &str, limit: usize) -> Result<Vec<FileHistoryEntry>> {
+        let n = limit.to_string();
+        let out = self.run_read(&[
+            "log",
+            "--follow",
+            "--format=%H%x1f%an%x1f%ct%x1f%s",
+            "-n",
+            &n,
+            "--",
+            path,
+        ])?;
+        let out = self.expect_ok(out, "git log --follow")?;
+        let mut v = Vec::new();
+        for line in out.stdout_str().lines() {
+            let parts: Vec<&str> = line.split('\x1f').collect();
+            if parts.len() >= 4 {
+                v.push(FileHistoryEntry {
+                    sha: parts[0].to_string(),
+                    author: parts[1].to_string(),
+                    time: parts[2].parse().unwrap_or(0),
+                    subject: parts[3].to_string(),
+                });
+            }
+        }
+        Ok(v)
+    }
+
+    /// `git blame --porcelain [rev] -- path`. `rev = None` blames the working tree.
+    pub fn blame(&self, path: &str, rev: Option<&str>) -> Result<Vec<BlameLine>> {
+        let mut args = vec!["blame", "--porcelain", "-w"];
+        if let Some(r) = rev {
+            args.push(r);
+        }
+        args.push("--");
+        args.push(path);
+        let out = self.run_read(&args)?;
+        let out = self.expect_ok(out, "git blame")?;
+        Ok(parse_blame_porcelain(&out.stdout_str()))
+    }
+
     /// Undo the last (unpushed) commit keeping its changes staged (05 §5).
     pub fn undo_last_commit(&self) -> Result<()> {
         self.expect_ok(self.run(&["reset", "--soft", "HEAD~1"])?, "git reset --soft")
@@ -601,5 +711,22 @@ pub fn detect_in_progress(git_dir: &Path) -> Option<InProgressOp> {
         Some(InProgressOp::Bisect)
     } else {
         None
+    }
+}
+
+#[cfg(test)]
+mod blame_tests {
+    use super::parse_blame_porcelain;
+
+    #[test]
+    fn blame_porcelain_parses() {
+        let out = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 1 1 2\nauthor Ada\nauthor-time 1700000000\nsummary first\nfilename f.rs\n\tline one\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa 2 2\n\tline two\nbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 1 3 1\nauthor Bob\nauthor-time 1700000100\nsummary second\nfilename f.rs\n\tline three\n";
+        let v = parse_blame_porcelain(out);
+        assert_eq!(v.len(), 3);
+        assert_eq!(v[0].author, "Ada");
+        assert_eq!(v[1].author, "Ada");
+        assert_eq!(v[1].line_no, 2);
+        assert_eq!(v[2].summary, "second");
+        assert_eq!(v[2].text, "line three");
     }
 }
