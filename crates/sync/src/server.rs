@@ -23,7 +23,7 @@ use crate::pairing::{PairingPayload, now};
 use crate::proto::*;
 use crate::relay::RelayConn;
 use crate::store::{DesktopState, PairedDevice, encode_key};
-use crate::transport::{lan_addresses, read_frame, write_frame};
+use crate::transport::{lan_addresses, read_frame, read_frame_max, write_frame};
 
 /// What the desktop app plugs in: the read model and the (human-gated) write path.
 pub trait Backend: Send + Sync + 'static {
@@ -410,13 +410,19 @@ fn fmt_addr(ip: &std::net::IpAddr, port: u16) -> String {
     }
 }
 
+/// Hellos are a few hundred bytes; anything bigger is not a Sluice device.
+const MAX_HELLO: usize = 64 * 1024;
+
 fn run_session(inner: Arc<Inner>, mut link: Link) -> Result<()> {
-    let first = read_frame(&mut link.reader)?;
+    let first = read_frame_max(&mut link.reader, MAX_HELLO)?;
     run_session_with_first(inner, link, first)
 }
 
 /// Handshake (pair or resume) on `link`, then serve until the peer leaves.
 fn run_session_with_first(inner: Arc<Inner>, mut link: Link, first: Vec<u8>) -> Result<()> {
+    if first.len() > MAX_HELLO {
+        bail!("hello too large");
+    }
     let (header, start) = peek_header(&first)?;
     let my_id = inner.state.lock().unwrap().desktop_id.clone();
     if header.desktop_id != my_id {

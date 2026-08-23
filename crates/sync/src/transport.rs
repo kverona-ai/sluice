@@ -20,10 +20,16 @@ pub fn write_frame(w: &mut impl Write, payload: &[u8]) -> Result<()> {
 }
 
 pub fn read_frame(r: &mut impl Read) -> Result<Vec<u8>> {
+    read_frame_max(r, MAX_FRAME)
+}
+
+/// Like `read_frame` but with a tighter bound — used for the unauthenticated first
+/// frame so a stranger on the LAN cannot make the desktop allocate 8 MiB per connection.
+pub fn read_frame_max(r: &mut impl Read, max: usize) -> Result<Vec<u8>> {
     let mut len = [0u8; 4];
     r.read_exact(&mut len).context("connection closed")?;
     let len = u32::from_be_bytes(len) as usize;
-    if len > MAX_FRAME {
+    if len > max {
         bail!("frame too large ({len} bytes)");
     }
     let mut buf = vec![0u8; len];

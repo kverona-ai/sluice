@@ -757,11 +757,36 @@ mod tests {
         }
     }
 
+    fn git(dir: &Path, args: &[&str]) {
+        let st = std::process::Command::new("git")
+            .args(args)
+            .current_dir(dir)
+            .env("GIT_AUTHOR_NAME", "ci")
+            .env("GIT_AUTHOR_EMAIL", "ci@example.com")
+            .env("GIT_COMMITTER_NAME", "ci")
+            .env("GIT_COMMITTER_EMAIL", "ci@example.com")
+            .status()
+            .expect("git on PATH");
+        assert!(st.success(), "git {args:?} failed");
+    }
+
     /// The M0 ⑤ smoke the roadmap asks for (04 §1): call repo_status and receive one event.
+    /// Builds its own two-commit repository so it does not depend on the checkout depth.
     #[tokio::test]
     async fn open_local_repo_status_and_one_event() {
         let dir = std::env::temp_dir().join(format!("sluice-ffi-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let repo = dir.join("repo");
+        std::fs::create_dir_all(&repo).unwrap();
+        git(&repo, &["init", "-q", "-b", "main"]);
+        git(&repo, &["config", "core.autocrlf", "false"]);
+        std::fs::write(repo.join("a.txt"), "one\n").unwrap();
+        git(&repo, &["add", "a.txt"]);
+        git(&repo, &["commit", "-q", "-m", "first"]);
+        std::fs::write(repo.join("a.txt"), "one\ntwo\n").unwrap();
+        git(&repo, &["commit", "-q", "-am", "second"]);
+
         let session = SluiceSession::new(
             dir.to_string_lossy().to_string(),
             "test".into(),
@@ -769,18 +794,22 @@ mod tests {
         );
         let events = Arc::new(Mutex::new(Vec::new()));
         session.set_event_sink(Some(Box::new(Collect(events.clone()))));
-        // this workspace is a git repository
-        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
         let summary = session
-            .open_local(root.to_string_lossy().to_string())
+            .open_local(repo.to_string_lossy().to_string())
             .await
             .unwrap();
         assert!(!summary.head_short.is_empty());
+        assert_eq!(summary.branch, "main");
+        assert_eq!(summary.head_subject, "second");
         let view = session.repo();
         let page = view.log(0, 5).await.unwrap();
-        assert!(!page.rows.is_empty());
+        assert_eq!(page.rows.len(), 2);
         let detail = view.commit(page.rows[0].oid.clone()).await.unwrap();
         assert_eq!(detail.short, page.rows[0].short);
+        assert_eq!(detail.subject, "second");
+        assert_eq!(detail.files.len(), 1);
+        let diff = view.diff(page.rows[0].oid.clone(), "a.txt".into()).await.unwrap();
+        assert!(diff.patch.contains("+two"), "{}", diff.patch);
         let got = events.lock().unwrap().clone();
         assert!(got.iter().any(|e| matches!(e, DomainEvent::RepoChanged { .. })));
         assert!(!session.is_connected());

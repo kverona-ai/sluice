@@ -214,8 +214,7 @@ impl Client {
 
     /// Ask the desktop to forget this device, then drop it locally.
     pub fn unpair(&self, desktop_id: &str) -> Result<()> {
-        if let Ok(c) = self.connect(Some(desktop_id)) {
-            let _ = c;
+        if self.connect(Some(desktop_id)).is_ok() {
             if let Some(l) = self.live.lock().unwrap().clone() {
                 let _ = send(&l, &ClientMsg::Unpair);
             }
