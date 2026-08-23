@@ -2,6 +2,8 @@
 //! Visual language follows the Claude Design prototype (`SluiceDesktop.dc.html`,
 //! Broadsheet design system: Source Serif 4, cyan / magenta / process-yellow inks).
 
+#[macro_use]
+pub mod i18n;
 pub mod ai;
 pub mod assets;
 pub mod changes;
@@ -74,6 +76,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-,", workbench::OpenSettings, ctx),
         KeyBinding::new("cmd-shift-k", workbench::OpenPush, ctx),
         KeyBinding::new("cmd-shift-t", workbench::ToggleTheme, ctx),
+        KeyBinding::new("cmd-shift-l", workbench::ToggleLang, ctx),
+        KeyBinding::new("ctrl-shift-l", workbench::ToggleLang, ctx),
         KeyBinding::new("cmd-u", workbench::OpenUserFilter, ctx),
         KeyBinding::new("cmd-shift-h", workbench::OpenFileHistory, ctx),
         KeyBinding::new("cmd-shift-i", workbench::OpenAiConnect, ctx),
@@ -102,6 +106,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-u", workbench::OpenUserFilter, ctx),
         KeyBinding::new("cmd-alt-d", workbench::OpenDateFilter, ctx),
         KeyBinding::new("cmd-alt-p", workbench::OpenPathFilter, ctx),
+        KeyBinding::new("cmd-shift-m", workbench::OpenMessageHistory, ctx),
+        KeyBinding::new("ctrl-shift-m", workbench::OpenMessageHistory, ctx),
         KeyBinding::new("ctrl-alt-p", workbench::OpenPathFilter, ctx),
         KeyBinding::new("ctrl-alt-d", workbench::OpenDateFilter, ctx),
         KeyBinding::new("ctrl-shift-t", workbench::ToggleTheme, ctx),

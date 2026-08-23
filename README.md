@@ -66,6 +66,7 @@ rebuilt for the agentic era:
 | **Agent provenance** | commits are attributed to the agent that made them (trailer analysis today, deterministic session tracking on the roadmap) |
 | **Live refresh** | worktree + `.git` watcher; anything an agent does shows up in ~200 ms |
 | **Console** | every git command with duration, exit code and stderr; verbose mode reveals the read path too |
+| **Chinese / English UI** | `⌘⇧L` toggles the language (persisted); dark / light theme `⌘⇧T` |
 | **Keyboard-first** | IDEA-style keymap: `⌘9` Log · `⌘0` Changes · `⌘B` branches · `⌘5` stash · `⌘K` commit panel · `⌘↩` commit · `Space` stage · full list in Settings (`⌘,`) |
 
 ## Tech stack

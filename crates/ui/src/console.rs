@@ -2,6 +2,7 @@
 //! duration, exit code and a one-line summary; verbose mode adds the gix
 //! read path as equivalent commands (05 §4).
 
+use crate::i18n::tr;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement, Styled, div, px,
@@ -52,7 +53,7 @@ impl Workbench {
                         this.console_filter = None;
                         cx.notify();
                     }))
-                    .child(chip(filter.is_none(), "全部")),
+                    .child(chip(filter.is_none(), tr("全部"))),
             )
             .child(
                 div()
@@ -62,7 +63,7 @@ impl Workbench {
                         this.console_filter = Some(ConsoleKind::Write);
                         cx.notify();
                     }))
-                    .child(chip(filter == Some(ConsoleKind::Write), "写操作")),
+                    .child(chip(filter == Some(ConsoleKind::Write), tr("写操作"))),
             )
             .child(
                 div()
@@ -73,7 +74,7 @@ impl Workbench {
                         this.console_verbose = true;
                         cx.notify();
                     }))
-                    .child(chip(filter == Some(ConsoleKind::Read), "读操作")),
+                    .child(chip(filter == Some(ConsoleKind::Read), tr("读操作"))),
             )
             .child(
                 div()
@@ -93,14 +94,14 @@ impl Workbench {
                         this.console_verbose = !this.console_verbose;
                         cx.notify();
                     }))
-                    .child(chip(verbose, "详细（含 gix 读等价命令）")),
+                    .child(chip(verbose, tr("详细（含 gix 读等价命令）"))),
             )
             .child(
                 div()
                     .ml_auto()
                     .text_size(px(11.5))
                     .text_color(t.muted)
-                    .child(format!("{total} 条")),
+                    .child(tf!("{} 条", total)),
             )
             .child(
                 div()
@@ -112,7 +113,7 @@ impl Workbench {
                         this.repo.console.clear();
                         cx.notify();
                     }))
-                    .child("清空"),
+                    .child(tr("清空")),
             );
 
         let mut list = div()
@@ -123,8 +124,8 @@ impl Workbench {
             .py(px(4.));
         for (i, e) in entries.iter().rev().enumerate() {
             let (tag, color) = match e.kind {
-                ConsoleKind::Read => ("读", t.muted),
-                ConsoleKind::Write => ("写", t.cyan_deep),
+                ConsoleKind::Read => (tr("读"), t.muted),
+                ConsoleKind::Write => (tr("写"), t.cyan_deep),
                 ConsoleKind::Ai => ("AI", t.mag_deep),
             };
             let ok = e.exit_code.unwrap_or(0) == 0;
@@ -212,7 +213,7 @@ impl Workbench {
                 div()
                     .p(px(16.))
                     .text_color(t.muted)
-                    .child("暂无记录。每一条写操作都会在这里还原为等价 git 命令。"),
+                    .child(tr("暂无记录。每一条写操作都会在这里还原为等价 git 命令。")),
             );
         }
         div()

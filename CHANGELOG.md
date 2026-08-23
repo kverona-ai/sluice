@@ -6,6 +6,9 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **English UI** (`⌘⇧L` or Settings → Appearance): `tr()` / `tf!` translation layer with a
+  `assets/i18n/en.json` table covering the whole desktop UI; language persists in settings.
+- **Commit message history**: last 50 messages, ⟲ in the commit panel / `⌘⇧M`.
 - **Interactive rebase planner** (commit context menu / ⌥⌘R): pick · reword · squash · fixup ·
   drop, reorder (⌥↑/⌥↓), reword editor; runs `git rebase -i` through the plan-driven
   `sluice seq-editor` / `sluice editor`; safety snapshot first; conflicts → in-progress banner.

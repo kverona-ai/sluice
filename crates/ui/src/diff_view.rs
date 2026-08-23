@@ -3,6 +3,7 @@
 //! word-level highlights, and — for working-tree diffs — hunk / line checkboxes
 //! that drive line-level staging (`git apply --cached`).
 
+use crate::i18n::tr;
 use std::ops::Range;
 
 use gpui::prelude::FluentBuilder;
@@ -173,12 +174,12 @@ impl Workbench {
             .unwrap_or((0, 0, 0));
         let origin = if work {
             if dv.stageable {
-                "工作区 vs 暂存区"
+                tr("工作区 vs 暂存区")
             } else {
-                "暂存区 vs HEAD"
+                tr("暂存区 vs HEAD")
             }
         } else {
-            "提交 vs 父提交"
+            tr("提交 vs 父提交")
         };
 
         let pill = |on: bool, label: &'static str| {
@@ -220,19 +221,31 @@ impl Workbench {
                     .hover(move |s| s.text_color(t.cyan))
                     .on_click(cx.listener(|this, _, _, cx| this.close_diff(cx)))
                     .child(icon_b("caret-left", px(12.), t.cyan_deep))
-                    .child(if work { "变更列表" } else { "日志" }),
+                    .child(if work { tr("变更列表") } else { tr("日志") }),
             )
             .child(
-                crate::workbench::chrome_button("hunk-prev", &t, "arrow-line-up", "上一处差异 ⇧F7", false)
-                    .w(px(22.))
-                    .h(px(22.))
-                    .on_click(cx.listener(|this, _, _, cx| this.jump_hunk(-1, cx))),
+                crate::workbench::chrome_button(
+                    "hunk-prev",
+                    &t,
+                    "arrow-line-up",
+                    tr("上一处差异 ⇧F7"),
+                    false,
+                )
+                .w(px(22.))
+                .h(px(22.))
+                .on_click(cx.listener(|this, _, _, cx| this.jump_hunk(-1, cx))),
             )
             .child(
-                crate::workbench::chrome_button("hunk-next", &t, "arrow-line-down", "下一处差异 F7", false)
-                    .w(px(22.))
-                    .h(px(22.))
-                    .on_click(cx.listener(|this, _, _, cx| this.jump_hunk(1, cx))),
+                crate::workbench::chrome_button(
+                    "hunk-next",
+                    &t,
+                    "arrow-line-down",
+                    tr("下一处差异 F7"),
+                    false,
+                )
+                .w(px(22.))
+                .h(px(22.))
+                .on_click(cx.listener(|this, _, _, cx| this.jump_hunk(1, cx))),
             )
             .child(
                 div()
@@ -246,7 +259,7 @@ impl Workbench {
                     .font_family(FONT_MONO)
                     .text_size(px(11.))
                     .text_color(t.cyan_deep)
-                    .child(format!("+{} −{} · {} 块", stats.0, stats.1, stats.2)),
+                    .child(tf!("+{} −{} · {} 块", stats.0, stats.1, stats.2)),
             )
             .child(
                 div()
@@ -257,7 +270,7 @@ impl Workbench {
                         this.side_by_side = true;
                         cx.notify();
                     }))
-                    .child(pill(sbs, "双栏")),
+                    .child(pill(sbs, tr("双栏"))),
             )
             .child(
                 div()
@@ -267,14 +280,14 @@ impl Workbench {
                         this.side_by_side = false;
                         cx.notify();
                     }))
-                    .child(pill(!sbs, "统一")),
+                    .child(pill(!sbs, tr("统一"))),
             )
             .child(
                 div()
                     .id("ws")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_ignore_ws(cx)))
-                    .child(pill(ignore_ws, "忽略空白")),
+                    .child(pill(ignore_ws, tr("忽略空白"))),
             )
             .child(
                 div()
@@ -292,10 +305,10 @@ impl Workbench {
                     .child(pill(
                         true,
                         match ctx_n {
-                            0 => "上下文 0 行",
-                            3 => "上下文 3 行",
-                            8 => "上下文 8 行",
-                            _ => "上下文 20 行",
+                            0 => tr("上下文 0 行"),
+                            3 => tr("上下文 3 行"),
+                            8 => tr("上下文 8 行"),
+                            _ => tr("上下文 20 行"),
                         },
                     )),
             )
@@ -305,20 +318,20 @@ impl Workbench {
             div()
                 .p(px(16.))
                 .text_color(t.mag_deep)
-                .child(format!("diff 失败：{err}"))
+                .child(tf!("diff 失败：{}", err))
                 .into_any_element()
         } else if let Some(d) = &dv.diff {
             if d.binary {
                 div()
                     .p(px(16.))
                     .text_color(t.muted)
-                    .child("二进制文件（不显示内容）")
+                    .child(tr("二进制文件（不显示内容）"))
                     .into_any_element()
             } else if d.hunks.is_empty() {
                 div()
                     .p(px(16.))
                     .text_color(t.muted)
-                    .child("无差异")
+                    .child(tr("无差异"))
                     .into_any_element()
             } else {
                 self.render_diff_rows(work, &dv, cx).into_any_element()
@@ -327,7 +340,7 @@ impl Workbench {
             div()
                 .p(px(16.))
                 .text_color(t.muted)
-                .child("正在计算 diff…")
+                .child(tr("正在计算 diff…"))
                 .into_any_element()
         };
 

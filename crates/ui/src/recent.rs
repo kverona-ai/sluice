@@ -2,6 +2,7 @@
 //! in `~/.sluice/recent.json`; switching repositories replaces the window root
 //! with a fresh Workbench (gpui `Window::replace_root`).
 
+use crate::i18n::tr;
 use std::path::{Path, PathBuf};
 
 use gpui::prelude::FluentBuilder;
@@ -86,7 +87,7 @@ impl Workbench {
             files: false,
             directories: true,
             multiple: false,
-            prompt: Some("打开仓库".into()),
+            prompt: Some(tr("打开仓库").into()),
         });
         cx.spawn_in(_window, async move |this, cx| {
             if let Ok(Ok(Some(paths))) = rx.await
@@ -135,7 +136,7 @@ impl Workbench {
             }
             Err(e) => {
                 self.toast(
-                    format!("打开失败：{}", format!("{e:#}").lines().next().unwrap_or("")),
+                    tf!("打开失败：{}", format!("{e:#}").lines().next().unwrap_or("")),
                     cx,
                 );
             }
@@ -158,7 +159,7 @@ impl Workbench {
                     .py(px(12.))
                     .text_size(px(12.5))
                     .text_color(t.muted)
-                    .child("还没有最近仓库。"),
+                    .child(tr("还没有最近仓库。")),
             );
         }
         for (i, r) in list.iter().enumerate() {
@@ -206,7 +207,7 @@ impl Workbench {
                             ),
                     )
                     .when(is_cur, |d| {
-                        d.child(div().text_size(px(11.)).text_color(t.faint).child("当前"))
+                        d.child(div().text_size(px(11.)).text_color(t.faint).child(tr("当前")))
                     })
                     .child(
                         div()
@@ -233,7 +234,7 @@ impl Workbench {
             .w(px(520.))
             .flex()
             .flex_col()
-            .child(self.panel_header(&t, "仓库", format!("{} 个最近仓库", list.len()), cx))
+            .child(self.panel_header(&t, tr("仓库"), tf!("{} 个最近仓库", list.len()), cx))
             .child(rows)
             .child(
                 div()
@@ -248,7 +249,7 @@ impl Workbench {
                         div()
                             .text_size(px(11.5))
                             .text_color(t.faint)
-                            .child("⌘O 直接打开文件夹 · ⌘⇧O 此列表"),
+                            .child(tr("⌘O 直接打开文件夹 · ⌘⇧O 此列表")),
                     )
                     .child(div().ml_auto())
                     .child(
@@ -267,7 +268,7 @@ impl Workbench {
                                 this.overlay = None;
                                 this.pick_repository(window, cx);
                             }))
-                            .child("打开文件夹…"),
+                            .child(tr("打开文件夹…")),
                     ),
             )
     }
@@ -282,6 +283,8 @@ pub struct Settings {
     /// Background `git fetch` every `fetch_minutes` (0 = off).
     pub fetch_minutes: u32,
     pub rail_expanded: bool,
+    /// "zh" (default) or "en".
+    pub lang: String,
 }
 
 impl Default for Settings {
@@ -291,6 +294,7 @@ impl Default for Settings {
             telemetry: false,
             fetch_minutes: 5,
             rail_expanded: false,
+            lang: "zh".into(),
         }
     }
 }
@@ -312,5 +316,33 @@ pub fn save_settings(s: &Settings) {
     }
     if let Ok(text) = serde_json::to_string_pretty(s) {
         let _ = std::fs::write(settings_path(), text);
+    }
+}
+
+/// Recent commit messages (last 50, newest first) — `~/.sluice/commit-messages.json`.
+fn messages_path() -> PathBuf {
+    store().with_file_name("commit-messages.json")
+}
+
+pub fn load_messages() -> Vec<String> {
+    std::fs::read_to_string(messages_path())
+        .ok()
+        .and_then(|t| serde_json::from_str(&t).ok())
+        .unwrap_or_default()
+}
+
+pub fn remember_message(msg: &str) {
+    let msg = msg.trim();
+    if msg.is_empty() {
+        return;
+    }
+    let mut list: Vec<String> = load_messages().into_iter().filter(|m| m != msg).collect();
+    list.insert(0, msg.to_string());
+    list.truncate(50);
+    if let Some(parent) = messages_path().parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    if let Ok(text) = serde_json::to_string_pretty(&list) {
+        let _ = std::fs::write(messages_path(), text);
     }
 }

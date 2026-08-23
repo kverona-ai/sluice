@@ -1,6 +1,7 @@
 //! Log workspace (prototype screen 01): refs tree · filter bar · commit list
 //! with the lane graph · status bar · commit details (or a file diff).
 
+use crate::i18n::tr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, Timelike};
@@ -457,7 +458,7 @@ impl Workbench {
                         px(11.),
                         if ai_only { t.mag_deep } else { t.muted },
                     ))
-                    .child("仅看 AI 提交"),
+                    .child(tr("仅看 AI 提交")),
             )
             .child(
                 div()
@@ -470,10 +471,10 @@ impl Workbench {
                             LogOrder::TopoOrder => LogOrder::DateOrder,
                         };
                         let label = match this.query.order {
-                            LogOrder::DateOrder => "时间序（保持拓扑约束）",
-                            LogOrder::TopoOrder => "拓扑序",
+                            LogOrder::DateOrder => tr("时间序（保持拓扑约束）"),
+                            LogOrder::TopoOrder => tr("拓扑序"),
                         };
-                        this.toast(format!("排序：{label}"), cx);
+                        this.toast(tf!("排序：{}", label), cx);
                         this.reload_log(cx);
                     }))
                     .child(icon_b(
@@ -486,12 +487,11 @@ impl Workbench {
                         },
                     )),
             )
-            .children(self.render_popup(cx))
     }
 
     /// User / Date filter dropdowns. Painted through `deferred(anchored(..))` so the
     /// menu always draws above the commit list and clamps to the window.
-    fn render_popup(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+    pub(crate) fn render_popup(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let t = self.theme;
         let (popup, at) = self.popup?;
         let mut panel = div()
@@ -539,7 +539,7 @@ impl Workbench {
                                 div()
                                     .text_size(px(11.))
                                     .text_color(t.faint)
-                                    .child(format!("按作者过滤 · {} 人 · 可多选", authors.len())),
+                                    .child(tf!("按作者过滤 · {} 人 · 可多选", authors.len())),
                             )
                             .child(
                                 div()
@@ -556,7 +556,7 @@ impl Workbench {
                                         this.filter.authors.clear();
                                         this.apply_filter(cx);
                                     }))
-                                    .child("清除"),
+                                    .child(tr("清除")),
                             ),
                     )
                     .children(authors.into_iter().enumerate().map(|(i, name)| {
@@ -633,10 +633,9 @@ impl Workbench {
                             .border_b_1()
                             .border_color(t.line_soft)
                             .child(
-                                div()
-                                    .text_size(px(11.))
-                                    .text_color(t.faint)
-                                    .child("按路径过滤 · 输入路径或前缀，Enter 添加（git log -- <path>）"),
+                                div().text_size(px(11.)).text_color(t.faint).child(tr(
+                                    "按路径过滤 · 输入路径或前缀，Enter 添加（git log -- <path>）",
+                                )),
                             ),
                     )
                     .child(
@@ -698,9 +697,67 @@ impl Workbench {
                                     this.filter.paths.clear();
                                     this.recompute_path_filter(cx);
                                 }))
-                                .child("清除全部"),
+                                .child(tr("清除全部")),
                         )
                     });
+            }
+            Popup::Messages => {
+                let msgs = crate::recent::load_messages();
+                panel = panel.child(
+                    div()
+                        .px(px(12.))
+                        .py(px(5.))
+                        .border_b_1()
+                        .border_color(t.line_soft)
+                        .child(div().text_size(px(11.)).text_color(t.faint).child(format!(
+                            "{} · {}",
+                            tr("最近提交信息"),
+                            msgs.len()
+                        ))),
+                );
+                if msgs.is_empty() {
+                    panel = panel.child(
+                        div()
+                            .px(px(12.))
+                            .py(px(10.))
+                            .text_size(px(12.))
+                            .text_color(t.muted)
+                            .child(tr("还没有记录；成功提交后会出现在这里")),
+                    );
+                }
+                panel = panel.children(msgs.into_iter().enumerate().map(|(i, m)| {
+                    let first = m.lines().next().unwrap_or("").to_string();
+                    let more = m.lines().count() > 1;
+                    let full = m.clone();
+                    div()
+                        .id(("msg-hist", i))
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .mx(px(4.))
+                        .px(px(8.))
+                        .py(px(4.))
+                        .rounded(px(6.))
+                        .cursor_pointer()
+                        .hover(move |st| st.bg(t.ink_05))
+                        .on_click(cx.listener(move |this, _, window, cx| {
+                            let text = full.clone();
+                            this.commit_msg.update(cx, |s, cx| s.set_value(text, window, cx));
+                            this.popup = None;
+                            cx.notify();
+                        }))
+                        .child(
+                            div()
+                                .flex_1()
+                                .min_w_0()
+                                .truncate()
+                                .text_size(px(12.))
+                                .child(first),
+                        )
+                        .when(more, |d| {
+                            d.child(div().text_size(px(10.5)).text_color(t.faint).child("…"))
+                        })
+                }));
             }
             Popup::Date => {
                 let current = self.filter.date;
@@ -711,7 +768,12 @@ impl Workbench {
                             .py(px(5.))
                             .border_b_1()
                             .border_color(t.line_soft)
-                            .child(div().text_size(px(11.)).text_color(t.faint).child("按时间过滤")),
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(t.faint)
+                                    .child(tr("按时间过滤")),
+                            ),
                     )
                     .children(DateFilter::ALL.into_iter().enumerate().map(|(i, d)| {
                         let on = d == current;
@@ -750,7 +812,7 @@ impl Workbench {
                                     })),
                             )
                             .child(if d == DateFilter::Any {
-                                "全部时间".to_string()
+                                tr("全部时间").to_string()
                             } else {
                                 d.label().to_string()
                             })
@@ -774,9 +836,9 @@ impl Workbench {
         let graph_w = self.graph_width();
         let Some(log) = self.log.clone() else {
             let msg = if self.log_loading {
-                "正在读取仓库…".to_string()
+                tr("正在读取仓库…").to_string()
             } else {
-                self.log_error.clone().unwrap_or_else(|| "无提交".into())
+                self.log_error.clone().unwrap_or_else(|| tr("无提交").into())
             };
             return div()
                 .flex_1()
@@ -924,22 +986,22 @@ impl Workbench {
             .unwrap_or((0, 0, 0));
         let shown = self.visible.len();
         let mut count = if n_all >= limit && limit > 0 {
-            format!("前 {n_all} 条提交（上限 {limit}）· 加载 {load_ms}ms")
+            tf!("前 {} 条提交（上限 {}）· 加载 {}ms", n_all, limit, load_ms)
         } else {
-            format!("{n_all} 条提交 · 加载 {load_ms}ms")
+            tf!("{} 条提交 · 加载 {}ms", n_all, load_ms)
         };
         if self.filter.is_active() {
             count = format!("{shown} / {count}");
         }
         if self.log_loading {
-            count.push_str(" · 刷新中…");
+            count.push_str(tr(" · 刷新中…"));
         }
         let head = &self.repo.info.head;
         let ahead = head.ahead;
         let behind = head.behind;
         let right = match &head.upstream {
-            Some(u) => format!("upstream {u} · watcher 活跃"),
-            None => "无 upstream · watcher 活跃".to_string(),
+            Some(u) => tf!("upstream {} · watcher 活跃", u),
+            None => tr("无 upstream · watcher 活跃").to_string(),
         };
         div()
             .h(px(25.))
@@ -956,9 +1018,9 @@ impl Workbench {
             .child(
                 div()
                     .when(ahead > 0, |d| d.text_color(t.cyan))
-                    .child(format!("↑{ahead} 未推送")),
+                    .child(tf!("↑{} 未推送", ahead)),
             )
-            .child(format!("↓{behind} 未拉取"))
+            .child(tf!("↓{} 未拉取", behind))
             .child(div().ml_auto().truncate().child(right))
     }
 
@@ -994,9 +1056,9 @@ impl Workbench {
 
         let Some(detail) = self.detail.clone() else {
             let msg = if self.selected_commit().is_some() {
-                "读取中…"
+                tr("读取中…")
             } else {
-                "未选择提交"
+                tr("未选择提交")
             };
             return panel.child(div().text_size(px(12.5)).text_color(t.muted).child(msg));
         };
@@ -1017,7 +1079,7 @@ impl Workbench {
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "—".to_string());
         let parents = if c.parents.is_empty() {
-            "—（根提交）".to_string()
+            tr("—（根提交）").to_string()
         } else {
             c.parents
                 .iter()
@@ -1039,9 +1101,9 @@ impl Workbench {
             (a + f.additions.unwrap_or(0), d + f.deletions.unwrap_or(0))
         });
         let signature_text = if d.has_signature {
-            "已签名（验证待 M2）"
+            tr("已签名（验证待 M2）")
         } else {
-            "未签名"
+            tr("未签名")
         };
         // Session provenance: hook events (sluice hook <tool>) touching this commit's
         // files within the 12 h before the commit.
@@ -1049,17 +1111,17 @@ impl Workbench {
         let commit_files: Vec<String> = files.iter().map(|f| f.path.clone()).collect();
         let matches = self.provenance_for(&c.id, &commit_files, commit_at);
         let trace = if c.agent.is_ai() {
-            format!(
+            tf!(
                 "{} · 依据 Co-authored-by / Sluice-Agent trailer 判定。",
                 c.agent.label()
             )
         } else if matches.is_empty() {
-            format!(
+            tf!(
                 "人类提交 —— 作者 {}。未发现 AI 代理 trailer，也没有匹配的 AI 会话记录。",
                 c.author.name
             )
         } else {
-            format!(
+            tf!(
                 "作者 {}；trailer 未标注 AI，但以下 AI 会话在提交前修改过这些文件：",
                 c.author.name
             )
@@ -1090,20 +1152,20 @@ impl Workbench {
                             .hover(move |s| s.text_color(t.cyan))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(full.clone()));
-                                this.toast(format!("已复制 {}", &full[..full.len().min(12)]), cx);
+                                this.toast(tf!("已复制 {}", &full[..full.len().min(12)]), cx);
                             }))
                             .child(format!("{}  ⎘", c.id.short(12)))
                             .into_any_element()
                     }))
                     .child(row(
-                        "作者",
+                        tr("作者"),
                         div()
                             .truncate()
                             .child(format!("{} · {}", c.author.name, fmt_date(&c.author.time)))
                             .into_any_element(),
                     ))
                     .child(row(
-                        "父提交",
+                        tr("父提交"),
                         div()
                             .font_family(FONT_MONO)
                             .truncate()
@@ -1112,7 +1174,7 @@ impl Workbench {
                     ))
                     .child(row("refs", div().truncate().child(refs_text).into_any_element()))
                     .child(row(
-                        "签名",
+                        tr("签名"),
                         div()
                             .flex()
                             .items_center()
@@ -1149,7 +1211,7 @@ impl Workbench {
             .flex_col()
             .child(div().pb(px(6.)).child(section_label(
                 &t,
-                format!("变更文件 · {} 个文件 +{adds} −{dels}", files.len()),
+                tf!("变更文件 · {} 个文件 +{} −{}", files.len(), adds, dels),
             )));
         for (i, f) in files.iter().take(400).enumerate() {
             let (dir, name) = f.split_dir_name();
@@ -1236,7 +1298,7 @@ impl Workbench {
                 div()
                     .text_size(px(11.5))
                     .text_color(t.faint)
-                    .child(format!("… 还有 {} 个文件", files.len() - 400)),
+                    .child(tf!("… 还有 {} 个文件", files.len() - 400)),
             );
         }
         panel = panel.child(list);
@@ -1255,7 +1317,7 @@ impl Workbench {
                     div()
                         .text_size(px(11.))
                         .text_color(t.mag_deep)
-                        .child("会话溯源".to_uppercase()),
+                        .child(tr("会话溯源").to_uppercase()),
                 )
                 .child(div().text_size(px(12.5)).line_height(px(19.)).child(trace))
                 .children(matches.iter().take(6).map(|m| {
@@ -1280,12 +1342,13 @@ impl Workbench {
                             div()
                                 .font_family(FONT_MONO)
                                 .text_color(t.faint)
-                                .child(format!("会话 {sid}")),
+                                .child(tf!("会话 {}", sid)),
                         )
-                        .child(div().text_color(t.muted).child(format!(
-                            "{} 次改动 · {} 个文件 · {when}",
+                        .child(div().text_color(t.muted).child(tf!(
+                            "{} 次改动 · {} 个文件 · {}",
                             m.events,
-                            m.files.len()
+                            m.files.len(),
+                            when
                         )))
                 }))
                 .child(
@@ -1293,9 +1356,9 @@ impl Workbench {
                         .text_size(px(11.))
                         .text_color(t.faint)
                         .child(if matches.is_empty() {
-                            "溯源数据来自各 AI CLI 的 hooks（AI 接入面板一键安装）".to_string()
+                            tr("溯源数据来自各 AI CLI 的 hooks（AI 接入面板一键安装）").to_string()
                         } else {
-                            format!(
+                            tf!(
                                 "匹配规则：提交前 12 小时内、触及相同路径的 hook 事件，共 {} 个会话",
                                 matches.len()
                             )

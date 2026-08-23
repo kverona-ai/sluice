@@ -3,6 +3,7 @@
 //! theirs / both per block, writes the file back and marks it resolved
 //! (`git add`). Whole-file shortcuts use `git checkout --ours/--theirs`.
 
+use crate::i18n::tr;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext as _, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
@@ -240,15 +241,15 @@ impl Workbench {
     pub(crate) fn conflict_save(&mut self, mark_resolved: bool, cx: &mut Context<Self>) {
         let Some(cv) = self.conflict.clone() else { return };
         if mark_resolved && cv.unresolved() > 0 {
-            self.toast(format!("还有 {} 个冲突块未解决", cv.unresolved()), cx);
+            self.toast(tf!("还有 {} 个冲突块未解决", cv.unresolved()), cx);
             return;
         }
         let text = cv.render_text();
         let path = cv.path.clone();
         let what = if mark_resolved {
-            format!("解决冲突 {path}")
+            tf!("解决冲突 {}", path)
         } else {
-            format!("保存 {path}")
+            tf!("保存 {}", path)
         };
         if mark_resolved {
             self.conflict = None;
@@ -262,9 +263,9 @@ impl Workbench {
                 std::fs::write(cli.workdir().join(&path), text)?;
                 if mark_resolved {
                     cli.stage(&[&path])?;
-                    Ok("已标记为已解决".into())
+                    Ok(tr("已标记为已解决").into())
                 } else {
-                    Ok("已写入工作区".into())
+                    Ok(tr("已写入工作区").into())
                 }
             },
             cx,
@@ -276,11 +277,15 @@ impl Workbench {
         let path = cv.path.clone();
         self.conflict = None;
         self.run_git(
-            format!("{} 整个文件用{}", path, if ours { "我们的" } else { "他们的" }),
+            tf!(
+                "{} 整个文件用{}",
+                path,
+                if ours { tr("我们的") } else { tr("他们的") }
+            ),
             move |cli| {
                 cli.run(&["checkout", if ours { "--ours" } else { "--theirs" }, "--", &path])?;
                 cli.stage(&[&path])?;
-                Ok("已标记为已解决".into())
+                Ok(tr("已标记为已解决").into())
             },
             cx,
         );
@@ -303,7 +308,7 @@ impl Workbench {
             .border_color(t.line_soft)
             .bg(t.paper)
             .child(
-                chrome_button("cf-close", &t, "caret-left", "返回（Esc）", false)
+                chrome_button("cf-close", &t, "caret-left", tr("返回（Esc）"), false)
                     .on_click(cx.listener(|this, _, _, cx| this.close_diff(cx))),
             )
             .child(
@@ -320,19 +325,19 @@ impl Workbench {
                     .text_size(px(11.))
                     .bg(if left == 0 { t.cyan_16 } else { t.mag_soft })
                     .text_color(if left == 0 { t.cyan_deep } else { t.mag_deep })
-                    .child(format!("{} / {} 未解决", left, total)),
+                    .child(tf!("{} / {} 未解决", left, total)),
             )
             .child(div().ml_auto())
             .child(
-                pill(&t, "cf-ours-all", "整个文件用我们的", false)
+                pill(&t, "cf-ours-all", tr("整个文件用我们的"), false)
                     .on_click(cx.listener(|this, _, _, cx| this.conflict_take_whole(true, cx))),
             )
             .child(
-                pill(&t, "cf-theirs-all", "整个文件用他们的", false)
+                pill(&t, "cf-theirs-all", tr("整个文件用他们的"), false)
                     .on_click(cx.listener(|this, _, _, cx| this.conflict_take_whole(false, cx))),
             )
             .child(
-                pill(&t, "cf-save", "保存", cv.dirty)
+                pill(&t, "cf-save", tr("保存"), cv.dirty)
                     .on_click(cx.listener(|this, _, _, cx| this.conflict_save(false, cx))),
             )
             .child(
@@ -347,10 +352,11 @@ impl Workbench {
                     .font_weight(gpui::FontWeight::SEMIBOLD)
                     .cursor_pointer()
                     .tooltip(move |window, cx| {
-                        gpui_component::tooltip::Tooltip::new("写入文件并 git add（⌘S）").build(window, cx)
+                        gpui_component::tooltip::Tooltip::new(tr("写入文件并 git add（⌘S）"))
+                            .build(window, cx)
                     })
                     .on_click(cx.listener(|this, _, _, cx| this.conflict_save(true, cx)))
-                    .child("保存并标记已解决"),
+                    .child(tr("保存并标记已解决")),
             );
 
         let mut body = div()
@@ -361,7 +367,7 @@ impl Workbench {
             .font_family(FONT_MONO)
             .text_size(px(11.5));
         if cv.loading {
-            body = body.child(div().p(px(12.)).text_color(t.faint).child("加载中…"));
+            body = body.child(div().p(px(12.)).text_color(t.faint).child(tr("加载中…")));
         }
         if let Some(e) = &cv.error {
             body = body.child(div().p(px(12.)).text_color(t.mag_deep).child(e.clone()));
@@ -429,39 +435,41 @@ impl Workbench {
                             .child(
                                 div()
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
-                                    .child(format!("冲突 {}", ix + 1)),
+                                    .child(tf!("冲突 {}", ix + 1)),
                             )
-                            .child(div().text_color(t.faint).child(format!(
-                                "我们的 {label_ours} · 他们的 {label_theirs}{}",
-                                if base.is_some() { " · 含 base" } else { "" }
+                            .child(div().text_color(t.faint).child(tf!(
+                                "我们的 {} · 他们的 {}{}",
+                                label_ours,
+                                label_theirs,
+                                if base.is_some() { tr(" · 含 base") } else { "" }
                             )))
                             .child(div().ml_auto())
                             .child(act(
                                 ("cf-o", ix),
-                                "用我们的 ⌥1",
+                                tr("用我们的 ⌥1"),
                                 *choice == Choice::Ours,
                                 Choice::Ours,
                             ))
                             .child(act(
                                 ("cf-t", ix),
-                                "用他们的 ⌥2",
+                                tr("用他们的 ⌥2"),
                                 *choice == Choice::Theirs,
                                 Choice::Theirs,
                             ))
                             .child(act(
                                 ("cf-b", ix),
-                                "两者 ⌥3",
+                                tr("两者 ⌥3"),
                                 *choice == Choice::Both,
                                 Choice::Both,
                             ))
                             .child(act(
                                 ("cf-br", ix),
-                                "两者(反序)",
+                                tr("两者(反序)"),
                                 *choice == Choice::BothReversed,
                                 Choice::BothReversed,
                             ))
                             .when(resolved, |d| {
-                                d.child(act(("cf-undo", ix), "撤销", false, Choice::Unresolved))
+                                d.child(act(("cf-undo", ix), tr("撤销"), false, Choice::Unresolved))
                             }),
                     );
                     match choice {
@@ -472,7 +480,7 @@ impl Workbench {
                                     .py(px(2.))
                                     .text_size(px(10.5))
                                     .text_color(t.cyan_deep)
-                                    .child("我们的（HEAD）"),
+                                    .child(tr("我们的（HEAD）")),
                             );
                             for l in ours {
                                 block = block.child(code_line(&t, 0, l, Some(t.cyan_16)));
@@ -496,7 +504,7 @@ impl Workbench {
                                     .py(px(2.))
                                     .text_size(px(10.5))
                                     .text_color(t.mag_deep)
-                                    .child("他们的"),
+                                    .child(tr("他们的")),
                             );
                             for l in theirs {
                                 block = block.child(code_line(&t, 0, l, Some(t.mag_soft)));

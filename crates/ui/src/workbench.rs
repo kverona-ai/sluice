@@ -2,6 +2,7 @@
 //! (Log / Local Changes / Console). All git work runs on the background
 //! executor; the view only owns snapshots.
 
+use crate::i18n::tr;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -53,9 +54,11 @@ actions!(
         OpenSettings,
         OpenPush,
         ToggleTheme,
+        ToggleLang,
         OpenUserFilter,
         OpenDateFilter,
         OpenPathFilter,
+        OpenMessageHistory,
         OpenFileHistory,
         OpenBlame,
         OpenAiConnect,
@@ -99,6 +102,8 @@ pub enum Popup {
     Users,
     Date,
     Paths,
+    /// Recent commit messages (commit panel ⟲).
+    Messages,
 }
 
 /// Which working-tree file the Changes tab is showing.
@@ -194,6 +199,12 @@ pub struct Workbench {
 
 impl Workbench {
     pub fn new(repo: Repo, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let settings = crate::recent::load_settings();
+        crate::i18n::set_lang(if settings.lang == "en" {
+            crate::i18n::Lang::En
+        } else {
+            crate::i18n::Lang::Zh
+        });
         let focus = cx.focus_handle();
         focus.focus(window);
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Text or hash"));
@@ -201,14 +212,14 @@ impl Workbench {
             InputState::new(window, cx)
                 .multi_line(true)
                 .rows(5)
-                .placeholder("在此撰写提交信息，或让已登录的 AI CLI 生成（零 API key）")
+                .placeholder(tr("在此撰写提交信息，或让已登录的 AI CLI 生成（零 API key）"))
         });
         let author_input =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Name <email>（留空沿用 git 配置）"));
-        let branch_filter = cx.new(|cx| InputState::new(window, cx).placeholder("搜索分支 / 标签"));
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("Name <email>（留空沿用 git 配置）")));
+        let branch_filter = cx.new(|cx| InputState::new(window, cx).placeholder(tr("搜索分支 / 标签")));
         let new_branch_name = cx.new(|cx| InputState::new(window, cx).placeholder("feat/my-branch"));
-        let stash_msg = cx.new(|cx| InputState::new(window, cx).placeholder("stash 说明（可选）"));
-        let paths_input = cx.new(|cx| InputState::new(window, cx).placeholder("src/ 或 README.md"));
+        let stash_msg = cx.new(|cx| InputState::new(window, cx).placeholder(tr("stash 说明（可选）")));
+        let paths_input = cx.new(|cx| InputState::new(window, cx).placeholder(tr("src/ 或 README.md")));
         cx.subscribe(&paths_input, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::PressEnter { .. }) {
                 let text = this.paths_input.read(cx).value().trim().to_string();
@@ -219,8 +230,7 @@ impl Workbench {
             }
         })
         .detach();
-        let settings = crate::recent::load_settings();
-        let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder("新的提交信息"));
+        let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder(tr("新的提交信息")));
         cx.subscribe(&rebase_msg, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
                 let text = this.rebase_msg.read(cx).value().to_string();
@@ -236,7 +246,7 @@ impl Workbench {
         let askpass_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
-                .placeholder("密码 / token / passphrase")
+                .placeholder(tr("密码 / token / passphrase"))
         });
         cx.subscribe(&branch_filter, |_, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
@@ -340,11 +350,57 @@ impl Workbench {
         }
         this.telemetry = this.settings.telemetry;
         this.rail_expanded = this.settings.rail_expanded;
+        crate::i18n::set_lang(if this.settings.lang == "en" {
+            crate::i18n::Lang::En
+        } else {
+            crate::i18n::Lang::Zh
+        });
         this.start_watcher(cx);
         this.reload_log(cx);
         this.reload_changes(cx);
         this.start_background_fetch(cx);
         this
+    }
+
+    pub fn toggle_lang(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let en = crate::i18n::lang() == crate::i18n::Lang::Zh;
+        crate::i18n::set_lang(if en {
+            crate::i18n::Lang::En
+        } else {
+            crate::i18n::Lang::Zh
+        });
+        self.settings.lang = if en { "en".into() } else { "zh".into() };
+        self.save_settings();
+        // Placeholders are captured at construction; refresh them for the new language.
+        self.commit_msg.update(cx, |st, cx| {
+            st.set_placeholder(
+                tr("在此撰写提交信息，或让已登录的 AI CLI 生成（零 API key）"),
+                window,
+                cx,
+            )
+        });
+        self.author_input.update(cx, |st, cx| {
+            st.set_placeholder(tr("Name <email>（留空沿用 git 配置）"), window, cx)
+        });
+        self.branch_filter
+            .update(cx, |st, cx| st.set_placeholder(tr("搜索分支 / 标签"), window, cx));
+        self.stash_msg.update(cx, |st, cx| {
+            st.set_placeholder(tr("stash 说明（可选）"), window, cx)
+        });
+        self.paths_input.update(cx, |st, cx| {
+            st.set_placeholder(tr("src/ 或 README.md"), window, cx)
+        });
+        self.rebase_msg
+            .update(cx, |st, cx| st.set_placeholder(tr("新的提交信息"), window, cx));
+        self.toast(
+            if en {
+                "Language: English"
+            } else {
+                "语言：中文"
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     pub fn save_settings(&mut self) {
@@ -379,7 +435,7 @@ impl Workbench {
             this.update(cx, |this, cx| {
                 match res {
                     Ok(set) => this.filter.path_ids = Some(set),
-                    Err(e) => this.toast(format!("路径过滤失败：{e:#}"), cx),
+                    Err(e) => this.toast(tf!("路径过滤失败：{}", format!("{e:#}")), cx),
                 }
                 this.apply_filter(cx);
             })
@@ -493,7 +549,7 @@ impl Workbench {
                 });
                 self._watch_task = Some(task);
             }
-            Err(e) => self.status = Some(format!("watcher 未启动：{e:#}")),
+            Err(e) => self.status = Some(tf!("watcher 未启动：{}", format!("{e:#}"))),
         }
     }
 
@@ -608,7 +664,7 @@ impl Workbench {
                 if this.detail_for.as_ref() == Some(&id) {
                     match res {
                         Ok(d) => this.detail = Some(Arc::new(d)),
-                        Err(e) => this.status = Some(format!("读取提交详情失败：{e:#}")),
+                        Err(e) => this.status = Some(tf!("读取提交详情失败：{}", format!("{e:#}"))),
                     }
                     cx.notify();
                 }
@@ -708,9 +764,9 @@ impl Workbench {
         crate::sync_component_theme(cx, &self.theme);
         self.toast(
             if self.theme.is_dark {
-                "已切换到深色主题"
+                tr("已切换到深色主题")
             } else {
-                "已切换到浅色主题"
+                tr("已切换到浅色主题")
             },
             cx,
         );
@@ -719,7 +775,7 @@ impl Workbench {
 
     /// Toast for controls whose feature lands in a later milestone — never a dead click.
     pub fn not_yet(&mut self, what: &str, when: &str, cx: &mut Context<Self>) {
-        self.toast(format!("{what} —— {when} 提供"), cx);
+        self.toast(tf!("{} —— {} 提供", what, when), cx);
     }
 
     fn move_by(&mut self, delta: isize, cx: &mut Context<Self>) {
@@ -958,7 +1014,7 @@ impl Workbench {
                             "tb-sidebar",
                             &t,
                             "sidebar-simple",
-                            "显示 / 隐藏侧栏",
+                            tr("显示 / 隐藏侧栏"),
                             self.sidebar_hidden,
                         )
                         .on_click(cx.listener(|this, _, _, cx| {
@@ -967,12 +1023,12 @@ impl Workbench {
                         })),
                     )
                     .child(
-                        chrome_button("tb-back", &t, "caret-left", "上一个选中的提交", false)
+                        chrome_button("tb-back", &t, "caret-left", tr("上一个选中的提交"), false)
                             .when(self.history_ix == 0, |d| d.opacity(0.4))
                             .on_click(cx.listener(|this, _, _, cx| this.history_step(-1, cx))),
                     )
                     .child(
-                        chrome_button("tb-fwd", &t, "caret-right", "下一个选中的提交", false)
+                        chrome_button("tb-fwd", &t, "caret-right", tr("下一个选中的提交"), false)
                             .when(self.history_ix + 1 >= self.history.len().max(1), |d| {
                                 d.opacity(0.4)
                             })
@@ -1034,24 +1090,24 @@ impl Workbench {
                             .items_center()
                             .gap(px(2.))
                             .child(
-                                chrome_button("tb-ai", &t, "sparkle", "AI 工具接入（一键 MCP）", false)
+                                chrome_button("tb-ai", &t, "sparkle", tr("AI 工具接入（一键 MCP）"), false)
                                     .on_click(cx.listener(|this, _, _, cx| this.open_ai_connect(cx))),
                             )
                             .child(
-                                chrome_button("tb-refresh", &t, "arrow-clockwise", "刷新 ⌥⌘Y", false)
+                                chrome_button("tb-refresh", &t, "arrow-clockwise", tr("刷新 ⌥⌘Y"), false)
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.refresh(cx);
                                         this.toast("已刷新", cx);
                                     })),
                             )
                             .child(
-                                chrome_button("tb-search", &t, "magnifying-glass", "搜索提交 ⌘F", false)
+                                chrome_button("tb-search", &t, "magnifying-glass", tr("搜索提交 ⌘F"), false)
                                     .on_click(
                                         cx.listener(|this, _, window, cx| this.focus_search(window, cx)),
                                     ),
                             )
                             .child(
-                                chrome_button("tb-more", &t, "dots-three-circle", "更多操作", false)
+                                chrome_button("tb-more", &t, "dots-three-circle", tr("更多操作"), false)
                                     .on_click(
                                         cx.listener(|this, _, _, cx| this.not_yet("更多操作菜单", "M2", cx)),
                                     ),
@@ -1131,11 +1187,11 @@ impl Workbench {
                     "rail-expand",
                     &t,
                     if expanded { "caret-left" } else { "caret-right" },
-                    "收起",
+                    tr("收起"),
                     if expanded {
-                        "收起工具栏"
+                        tr("收起工具栏")
                     } else {
-                        "展开工具栏（图标旁显示说明）"
+                        tr("展开工具栏（图标旁显示说明）")
                     },
                     false,
                     expanded,
@@ -1150,8 +1206,8 @@ impl Workbench {
                 item(
                     "rail-log",
                     "git-branch",
-                    "日志",
-                    "日志 / 提交图 ⌘9",
+                    tr("日志"),
+                    tr("日志 / 提交图 ⌘9"),
                     tab == Tab::Log,
                     None,
                 )
@@ -1161,23 +1217,30 @@ impl Workbench {
                 item(
                     "rail-changes",
                     "git-commit",
-                    "变更",
-                    "本地变更 / 提交 ⌘0",
+                    tr("变更"),
+                    tr("本地变更 / 提交 ⌘0"),
                     tab == Tab::Changes,
                     None,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Changes, cx))),
             )
             .child(
-                item("rail-branches", "git-merge", "分支", "分支面板 ⌃⇧`", false, None)
-                    .on_click(cx.listener(|this, _, _, cx| this.open_branches(cx))),
+                item(
+                    "rail-branches",
+                    "git-merge",
+                    tr("分支"),
+                    tr("分支面板 ⌃⇧`"),
+                    false,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.open_branches(cx))),
             )
             .child(
                 item(
                     "rail-pull",
                     "arrow-line-down",
-                    "拉取",
-                    "拉取（git pull）",
+                    tr("拉取"),
+                    tr("拉取（git pull）"),
                     false,
                     None,
                 )
@@ -1187,23 +1250,23 @@ impl Workbench {
                 item(
                     "rail-push",
                     "arrow-line-up",
-                    "推送",
-                    "推送对话框 ⌘⇧K",
+                    tr("推送"),
+                    tr("推送对话框 ⌘⇧K"),
                     false,
                     None,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.open_push(cx))),
             )
             .child(
-                item("rail-stash", "tray", "Stash", "Stash 列表", false, None)
+                item("rail-stash", "tray", "Stash", tr("Stash 列表"), false, None)
                     .on_click(cx.listener(|this, _, _, cx| this.open_stashes(cx))),
             )
             .child(
                 item(
                     "rail-time",
                     "clock-counter-clockwise",
-                    "时光机",
-                    "时光机 / 快照（M3 完整版）",
+                    tr("时光机"),
+                    tr("时光机 / 快照（M3 完整版）"),
                     false,
                     None,
                 )
@@ -1223,7 +1286,7 @@ impl Workbench {
                                     "rail-ai",
                                     "sparkle",
                                     "AI",
-                                    "AI 工具接入 ⌘⇧I / 待确认队列 ⌘⇧P",
+                                    tr("AI 工具接入 ⌘⇧I / 待确认队列 ⌘⇧P"),
                                     !self.proposals.is_empty(),
                                     Some(t.mag),
                                 )
@@ -1266,8 +1329,15 @@ impl Workbench {
                         .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Console, cx))),
                     )
                     .child(
-                        item("rail-settings", "gear", "设置", "设置 / Keymap", false, None)
-                            .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
+                        item(
+                            "rail-settings",
+                            "gear",
+                            tr("设置"),
+                            tr("设置 / Keymap"),
+                            false,
+                            None,
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
                     ),
             )
     }
@@ -1359,6 +1429,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
             .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
+            .on_action(cx.listener(|this, _: &ToggleLang, window, cx| this.toggle_lang(window, cx)))
             .on_action(cx.listener(|this, _: &OpenAiConnect, _, cx| this.open_ai_connect(cx)))
             .on_action(cx.listener(|this, _: &OpenProposals, _, cx| this.open_proposals(cx)))
             .on_action(cx.listener(|this, _: &OpenRepository, window, cx| this.pick_repository(window, cx)))
@@ -1395,6 +1466,11 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenUserFilter, _, cx| {
                 this.tab = Tab::Log;
                 this.popup = Some((Popup::Users, gpui::point(px(620.), px(64.))));
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &OpenMessageHistory, _, cx| {
+                this.tab = Tab::Changes;
+                this.popup = Some((Popup::Messages, gpui::point(px(60.), px(420.))));
                 cx.notify();
             }))
             .on_action(cx.listener(|this, _: &OpenPathFilter, window, cx| {
@@ -1445,6 +1521,7 @@ impl Render for Workbench {
                     .child(body),
             )
             .children(self.render_toast())
+            .children(self.render_popup(cx))
             .children(self.render_overlay(window, cx))
             .children(self.render_ctx_menu(window, cx))
     }
@@ -1481,26 +1558,26 @@ impl Workbench {
                 .text_size(px(12.))
                 .text_color(t.muted)
                 .child(
-                    entry("wm-file", "文件(F)")
+                    entry("wm-file", tr("文件(F)"))
                         .on_click(cx.listener(|this, _, _, cx| this.not_yet("应用菜单", "M4", cx))),
                 )
                 .child(
-                    entry("wm-edit", "编辑(E)")
+                    entry("wm-edit", tr("编辑(E)"))
                         .on_click(cx.listener(|this, _, _, cx| this.not_yet("应用菜单", "M4", cx))),
                 )
                 .child(
-                    entry("wm-view", "视图(V)")
+                    entry("wm-view", tr("视图(V)"))
                         .on_click(cx.listener(|this, _, _, cx| this.not_yet("应用菜单", "M4", cx))),
                 )
                 .child(div().text_color(t.cyan).child(
                     entry("wm-git", "Git(G)").on_click(cx.listener(|this, _, _, cx| this.open_branches(cx))),
                 ))
                 .child(
-                    entry("wm-ai", "AI 工具(A)")
+                    entry("wm-ai", tr("AI 工具(A)"))
                         .on_click(cx.listener(|this, _, _, cx| this.not_yet("AI 工具菜单", "M4", cx))),
                 )
                 .child(
-                    entry("wm-help", "帮助(H)")
+                    entry("wm-help", tr("帮助(H)"))
                         .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
                 )
                 .child(
@@ -1509,7 +1586,7 @@ impl Workbench {
                         .font_family(crate::theme::FONT_MONO)
                         .text_size(px(11.))
                         .text_color(t.faint)
-                        .child("Ctrl+K 提交 · Ctrl+Shift+K 推送"),
+                        .child(tr("Ctrl+K 提交 · Ctrl+Shift+K 推送")),
                 ),
         )
     }

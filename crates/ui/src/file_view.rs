@@ -1,6 +1,7 @@
 //! File history + blame (M3). Read-only git commands through the CLI (echoed to
 //! the Console); rendered in place of the diff pane in both Log and Changes.
 
+use crate::i18n::tr;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext as _, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
@@ -116,7 +117,7 @@ impl Workbench {
             .border_color(t.line_soft)
             .bg(t.paper)
             .child(
-                chrome_button("fv-close", &t, "caret-left", "返回（Esc）", false)
+                chrome_button("fv-close", &t, "caret-left", tr("返回（Esc）"), false)
                     .on_click(cx.listener(|this, _, _, cx| this.close_diff(cx))),
             )
             .child(
@@ -127,12 +128,12 @@ impl Workbench {
             )
             .child(div().text_size(px(11.)).text_color(t.faint).child(match &fv.rev {
                 Some(r) => format!("@ {}", &r[..r.len().min(8)]),
-                None => "工作区".to_string(),
+                None => tr("工作区").to_string(),
             }))
             .child(div().ml_auto())
             .child(mode_pill(
                 "fv-history",
-                "文件历史",
+                tr("文件历史"),
                 mode == FileViewMode::History,
                 FileViewMode::History,
             ))
@@ -143,8 +144,8 @@ impl Workbench {
                 FileViewMode::Blame,
             ))
             .child(div().text_size(px(11.)).text_color(t.faint).child(match mode {
-                FileViewMode::History => format!("{} 次提交 · git log --follow", fv.history.len()),
-                FileViewMode::Blame => format!("{} 行 · git blame -w", fv.blame.len()),
+                FileViewMode::History => tf!("{} 次提交 · git log --follow", fv.history.len()),
+                FileViewMode::Blame => tf!("{} 行 · git blame -w", fv.blame.len()),
             }));
 
         let body: gpui::AnyElement = if fv.loading {
@@ -155,7 +156,7 @@ impl Workbench {
                 .justify_center()
                 .text_color(t.faint)
                 .text_size(px(12.5))
-                .child("加载中…")
+                .child(tr("加载中…"))
                 .into_any_element()
         } else if let Some(err) = &fv.error {
             div()
@@ -216,9 +217,9 @@ impl Workbench {
                     .cursor_pointer()
                     .hover(move |s| s.bg(t.ink_05))
                     .tooltip(move |window, cx| {
-                        gpui_component::tooltip::Tooltip::new(
+                        gpui_component::tooltip::Tooltip::new(tr(
                             "点击：在提交图中选中 · Blame 按钮：查看该版本的 blame",
-                        )
+                        ))
                         .build(window, cx)
                     })
                     .on_click(cx.listener(move |this, _, _, cx| this.jump_to_commit(&sha, cx)))
@@ -271,7 +272,7 @@ impl Workbench {
                     .p(px(12.))
                     .text_color(t.faint)
                     .text_size(px(12.5))
-                    .child("没有历史（文件可能尚未提交）"),
+                    .child(tr("没有历史（文件可能尚未提交）")),
             );
         }
         list
@@ -364,7 +365,7 @@ impl Workbench {
                     .p(px(12.))
                     .text_color(t.faint)
                     .text_size(px(12.5))
-                    .child("没有 blame 数据"),
+                    .child(tr("没有 blame 数据")),
             );
         }
         list
@@ -382,7 +383,7 @@ impl Workbench {
                 self.select(vix, cx);
                 self.scroll.scroll_to_item(vix, gpui::ScrollStrategy::Center);
             }
-            self.toast(format!("已定位到 {}", &sha[..8]), cx);
+            self.toast(tf!("已定位到 {}", &sha[..8]), cx);
         } else {
             self.toast("该提交不在当前已加载的提交图中", cx);
         }

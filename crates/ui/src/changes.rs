@@ -2,6 +2,7 @@
 //! stage checkboxes, working-tree diff with hunk / line staging, commit panel
 //! (message editor, AI draft, Amend / Sign-off / Author), push / pull.
 
+use crate::i18n::tr;
 use std::sync::Arc;
 
 use gpui::prelude::FluentBuilder;
@@ -78,9 +79,9 @@ impl Workbench {
             this.update(cx, |this, cx| {
                 this.commit_busy = false;
                 match res {
-                    Ok(msg) if msg.is_empty() => this.toast(format!("{what}：完成"), cx),
-                    Ok(msg) => this.toast(format!("{what}：{msg}"), cx),
-                    Err(e) => this.toast(format!("{what} 失败：{}", first_line(&format!("{e:#}"))), cx),
+                    Ok(msg) if msg.is_empty() => this.toast(tf!("{}：完成", what), cx),
+                    Ok(msg) => this.toast(tf!("{}：{}", what, msg), cx),
+                    Err(e) => this.toast(tf!("{} 失败：{}", what, first_line(&format!("{e:#}"))), cx),
                 }
                 this.refresh(cx);
             })
@@ -95,11 +96,11 @@ impl Workbench {
         }
         let n = paths.len();
         self.run_git(
-            "暂存",
+            tr("暂存"),
             move |cli| {
                 let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
                 cli.stage(&refs)?;
-                Ok(format!("{n} 个文件"))
+                Ok(tf!("{} 个文件", n))
             },
             cx,
         );
@@ -111,11 +112,11 @@ impl Workbench {
         }
         let n = paths.len();
         self.run_git(
-            "取消暂存",
+            tr("取消暂存"),
             move |cli| {
                 let refs: Vec<&str> = paths.iter().map(String::as_str).collect();
                 cli.unstage(&refs)?;
-                Ok(format!("{n} 个文件"))
+                Ok(tf!("{} 个文件", n))
             },
             cx,
         );
@@ -308,7 +309,7 @@ impl Workbench {
             .is_some_and(|c| c.status.entries.iter().any(|e| e.path == path && e.untracked));
         self.deselected.clear();
         self.run_git(
-            "暂存所选行",
+            tr("暂存所选行"),
             move |cli| {
                 if untracked {
                     cli.intent_to_add(&[&path])?;
@@ -342,6 +343,7 @@ impl Workbench {
 
     fn do_commit(&mut self, push: bool, cx: &mut Context<Self>) {
         let message = self.commit_msg.read(cx).value().to_string();
+        let message_for_history = message.clone();
         if message.trim().is_empty() && !self.amend {
             self.toast("提交信息不能为空", cx);
             return;
@@ -381,19 +383,24 @@ impl Workbench {
                 this.commit_busy = false;
                 match res {
                     Ok(sha) => {
+                        crate::recent::remember_message(&message_for_history);
                         this.clear_msg_pending = true;
                         this.amend = false;
                         this.toast(
-                            format!(
+                            tf!(
                                 "{}：{}{}",
-                                if push { "已提交并推送" } else { "已提交" },
+                                if push {
+                                    tr("已提交并推送")
+                                } else {
+                                    tr("已提交")
+                                },
                                 &sha[..sha.len().min(8)],
-                                if amend { "（amend）" } else { "" }
+                                if amend { tr("（amend）") } else { "" }
                             ),
                             cx,
                         );
                     }
-                    Err(e) => this.toast(format!("提交失败：{}", first_line(&format!("{e:#}"))), cx),
+                    Err(e) => this.toast(tf!("提交失败：{}", first_line(&format!("{e:#}"))), cx),
                 }
                 this.refresh(cx);
             })
@@ -404,11 +411,11 @@ impl Workbench {
 
     pub(crate) fn git_pull(&mut self, cx: &mut Context<Self>) {
         self.run_git(
-            "拉取",
+            tr("拉取"),
             |cli| {
                 let out = cli.pull(None)?;
                 let l = first_line(&out.stdout_str());
-                Ok(if l.is_empty() { "完成".into() } else { l })
+                Ok(if l.is_empty() { tr("完成").into() } else { l })
             },
             cx,
         );
@@ -459,7 +466,7 @@ impl Workbench {
                         this.pending_ai_message = Some(msg);
                         this.toast("AI 草稿已生成，已填入消息框（可编辑，不会自动提交）", cx);
                     }
-                    Err(e) => this.toast(format!("AI 生成失败：{}", first_line(&format!("{e:#}"))), cx),
+                    Err(e) => this.toast(tf!("AI 生成失败：{}", first_line(&format!("{e:#}"))), cx),
                 }
                 cx.notify();
             })
@@ -494,7 +501,7 @@ impl Workbench {
                 .justify_center()
                 .text_color(t.faint)
                 .text_size(px(12.5))
-                .child("选择左侧文件查看 diff；勾选 = 纳入暂存区")
+                .child(tr("选择左侧文件查看 diff；勾选 = 纳入暂存区"))
                 .into_any_element()
         };
         let banner = self
@@ -562,14 +569,17 @@ impl Workbench {
                     .flex()
                     .items_center()
                     .gap(px(12.))
-                    .child(div().text_size(px(12.5)).child(format!(
-                        "已选 {hunks_on} 块 / {lines_on} 行（共 {lines_total} 行变更）纳入暂存"
+                    .child(div().text_size(px(12.5)).child(tf!(
+                        "已选 {} 块 / {} 行（共 {} 行变更）纳入暂存",
+                        hunks_on,
+                        lines_on,
+                        lines_total
                     )))
                     .child(
                         div()
                             .text_size(px(11.5))
                             .text_color(t.faint)
-                            .child("底层：git apply --cached --unidiff-zero（Console 可见）"),
+                            .child(tr("底层：git apply --cached --unidiff-zero（Console 可见）")),
                     )
                     .child(
                         div()
@@ -585,9 +595,9 @@ impl Workbench {
                             .hover(move |s| s.bg(t.cyan_deep))
                             .on_click(cx.listener(|this, _, _, cx| this.stage_selected_lines(cx)))
                             .child(if lines_on == lines_total {
-                                "暂存整个文件"
+                                tr("暂存整个文件")
                             } else {
-                                "暂存所选"
+                                tr("暂存所选")
                             }),
                     ),
             );
@@ -611,7 +621,7 @@ impl Workbench {
                         div()
                             .text_size(px(12.5))
                             .text_color(t.muted)
-                            .child("已暂存 —— 将随下一次提交落地"),
+                            .child(tr("已暂存 —— 将随下一次提交落地")),
                     )
                     .child(
                         div()
@@ -627,7 +637,7 @@ impl Workbench {
                             .on_click(
                                 cx.listener(move |this, _, _, cx| this.unstage_paths(vec![path.clone()], cx)),
                             )
-                            .child("取消暂存"),
+                            .child(tr("取消暂存")),
                     ),
             );
         }
@@ -654,9 +664,9 @@ impl Workbench {
                         .p(px(12.))
                         .text_color(t.muted)
                         .child(if self.changes_loading {
-                            "读取状态…"
+                            tr("读取状态…")
                         } else {
-                            "无法读取工作区状态"
+                            tr("无法读取工作区状态")
                         }),
                 );
             }
@@ -669,7 +679,7 @@ impl Workbench {
                         div()
                             .p(px(12.))
                             .text_color(t.muted)
-                            .child("工作区干净 —— 没有变更"),
+                            .child(tr("工作区干净 —— 没有变更")),
                     );
                 }
                 let rows = work_rows(&ch.status);
@@ -851,24 +861,36 @@ impl Workbench {
             .text_color(t.muted)
             .flex_none()
             .child(
-                crate::workbench::chrome_button("stage-all", &t, "arrow-line-down", "全部暂存 ⌥⌘A", false)
-                    .on_click(cx.listener(|this, _, _, cx| this.stage_all(cx))),
+                crate::workbench::chrome_button(
+                    "stage-all",
+                    &t,
+                    "arrow-line-down",
+                    tr("全部暂存 ⌥⌘A"),
+                    false,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.stage_all(cx))),
             )
             .child(
                 crate::workbench::chrome_button(
                     "unstage-all",
                     &t,
                     "arrow-line-up",
-                    "全部取消暂存 ⌥⌘U",
+                    tr("全部取消暂存 ⌥⌘U"),
                     false,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.unstage_all(cx))),
             )
             .child(
-                crate::workbench::chrome_button("refresh-changes", &t, "arrow-clockwise", "刷新状态", false)
-                    .on_click(cx.listener(|this, _, _, cx| this.reload_changes(cx))),
+                crate::workbench::chrome_button(
+                    "refresh-changes",
+                    &t,
+                    "arrow-clockwise",
+                    tr("刷新状态"),
+                    false,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.reload_changes(cx))),
             )
-            .child(div().ml_auto().child(format!("{staged_n} / {total_n} 已暂存")));
+            .child(div().ml_auto().child(tf!("{} / {} 已暂存", staged_n, total_n)));
 
         div()
             .w(px(396.))
@@ -888,9 +910,9 @@ impl Workbench {
         let msg_focused = gpui::Focusable::focus_handle(self.commit_msg.read(cx), cx).is_focused(window);
         let author_focused = gpui::Focusable::focus_handle(self.author_input.read(cx), cx).is_focused(window);
         let ai_label = match (&self.ai_tool, self.ai_busy) {
-            (None, _) => "AI 生成提交信息（未检测到 CLI）".to_string(),
-            (Some(_), true) => "生成中…".to_string(),
-            (Some((_, name)), false) => format!("AI 生成提交信息 · {name}"),
+            (None, _) => tr("AI 生成提交信息（未检测到 CLI）").to_string(),
+            (Some(_), true) => tr("生成中…").to_string(),
+            (Some((_, name)), false) => tf!("AI 生成提交信息 · {}", name),
         };
         let msg_len = self
             .commit_msg
@@ -919,7 +941,7 @@ impl Workbench {
                 })
         };
         let amend_warn = if self.amend {
-            Some("将改写最近一次提交".to_string())
+            Some(tr("将改写最近一次提交").to_string())
         } else {
             None
         };
@@ -942,12 +964,21 @@ impl Workbench {
                             "msg-history",
                             &t,
                             "clock-counter-clockwise",
-                            "消息历史（M2 后半）",
+                            tr("最近提交信息（最多 50 条）"),
                             false,
                         )
                         .w(px(22.))
                         .h(px(22.))
-                        .on_click(cx.listener(|this, _, _, cx| this.not_yet("提交消息历史", "M2 后半", cx))),
+                        .on_mouse_down(
+                            gpui::MouseButton::Left,
+                            cx.listener(|this, ev: &gpui::MouseDownEvent, _, cx| {
+                                this.popup = match this.popup {
+                                    Some((crate::workbench::Popup::Messages, _)) => None,
+                                    _ => Some((crate::workbench::Popup::Messages, ev.position)),
+                                };
+                                cx.notify();
+                            }),
+                        ),
                     )
                     .child(
                         div()
@@ -1023,9 +1054,9 @@ impl Workbench {
                         opt(
                             "opt-noverify",
                             self.no_verify,
-                            "跳过 hooks",
+                            tr("跳过 hooks"),
                             if self.no_verify {
-                                Some("慎用".into())
+                                Some(tr("慎用").into())
                             } else {
                                 None
                             },
@@ -1077,7 +1108,7 @@ impl Workbench {
                                     .hover(move |s| s.bg(t.cyan_deep))
                                     .when(busy, |d| d.opacity(0.5))
                                     .on_click(cx.listener(|this, _, _, cx| this.do_commit(false, cx)))
-                                    .child(if busy { "执行中…" } else { "Commit" }),
+                                    .child(if busy { tr("执行中…") } else { "Commit" }),
                             ),
                     ),
             )

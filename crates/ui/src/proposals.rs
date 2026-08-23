@@ -2,6 +2,7 @@
 //! `sluice mcp serve`, wait here for a human, and are executed only on Accept.
 //! Also hosts the askpass dialog fed by `sluice askpass`.
 
+use crate::i18n::tr;
 use std::sync::mpsc;
 
 use gpui::prelude::FluentBuilder;
@@ -39,7 +40,7 @@ impl Workbench {
                             busy: false,
                         });
                         this.repo.console.note("proposal", format!("{client}: {title}"));
-                        this.toast(format!("收到 {client} 的提议：{title}（⌘⇧P 查看队列）"), cx);
+                        this.toast(tf!("收到 {} 的提议：{}（⌘⇧P 查看队列）", client, title), cx);
                         cx.notify();
                     }
                     Inbound::Askpass { prompt, reply } => {
@@ -76,7 +77,7 @@ impl Workbench {
             let title = entry.proposal.kind.title();
             self.proposals.remove(ix);
             self.repo.console.note("proposal rejected", title.clone());
-            self.toast(format!("已拒绝：{title}"), cx);
+            self.toast(tf!("已拒绝：{}", title), cx);
             cx.notify();
             return;
         }
@@ -137,11 +138,11 @@ impl Workbench {
                             this.repo
                                 .console
                                 .note("proposal accepted", format!("{title} → {detail}"));
-                            this.toast(format!("已执行：{title} · {detail}"), cx);
+                            this.toast(tf!("已执行：{} · {}", title, detail), cx);
                         }
                         Err(e) => {
                             let msg = format!("{e:#}");
-                            this.toast(format!("执行失败：{}", msg.lines().next().unwrap_or("")), cx)
+                            this.toast(tf!("执行失败：{}", msg.lines().next().unwrap_or("")), cx)
                         }
                     }
                 }
@@ -168,7 +169,7 @@ impl Workbench {
         if n == 0 {
             list = list.child(
                 div().py(px(18.)).text_size(px(12.5)).text_color(t.muted).text_center().child(
-                    "队列为空。AI 工具通过 MCP 的 propose_commit / propose_branch / propose_push 提交提议后会出现在这里，由你决定是否执行。",
+                    tr("队列为空。AI 工具通过 MCP 的 propose_commit / propose_branch / propose_push 提交提议后会出现在这里，由你决定是否执行。"),
                 ),
             );
         }
@@ -241,7 +242,7 @@ impl Workbench {
                                 div()
                                     .text_size(px(11.))
                                     .text_color(t.faint)
-                                    .child("接受后由 Sluice 用你的 git 执行；拒绝会把结果告知调用方"),
+                                    .child(tr("接受后由 Sluice 用你的 git 执行；拒绝会把结果告知调用方")),
                             )
                             .child(div().ml_auto())
                             .child(
@@ -258,7 +259,7 @@ impl Workbench {
                                     .on_click(
                                         cx.listener(move |this, _, _, cx| this.decide_proposal(i, false, cx)),
                                     )
-                                    .child("拒绝"),
+                                    .child(tr("拒绝")),
                             )
                             .child(
                                 div()
@@ -276,7 +277,11 @@ impl Workbench {
                                     .on_click(
                                         cx.listener(move |this, _, _, cx| this.decide_proposal(i, true, cx)),
                                     )
-                                    .child(if busy { "执行中…" } else { "接受并执行" }),
+                                    .child(if busy {
+                                        tr("执行中…")
+                                    } else {
+                                        tr("接受并执行")
+                                    }),
                             ),
                     ),
             );
@@ -287,8 +292,8 @@ impl Workbench {
             .flex_col()
             .child(self.panel_header(
                 &t,
-                "待确认队列",
-                format!("{n} 条提议 · AI 只能提议，放行由你点下"),
+                tr("待确认队列"),
+                tf!("{} 条提议 · AI 只能提议，放行由你点下", n),
                 cx,
             ))
             .child(list)
@@ -306,7 +311,7 @@ impl Workbench {
                 .w(px(420.))
                 .flex()
                 .flex_col()
-                .child(self.panel_header(&t, "git 需要凭据", "来自 git / ssh 的 askpass 请求".into(), cx))
+                .child(self.panel_header(&t, tr("git 需要凭据"), tr("来自 git / ssh 的 askpass 请求").into(), cx))
                 .child(
                     div()
                         .px(px(16.))
@@ -326,7 +331,7 @@ impl Workbench {
                                 .text_size(px(12.5))
                                 .child(Input::new(&input).appearance(false)),
                         )
-                        .child(div().text_size(px(11.)).text_color(t.faint).child("输入不会被 Sluice 保存；推荐使用系统 credential helper / ssh-agent 以免反复询问。")),
+                        .child(div().text_size(px(11.)).text_color(t.faint).child(tr("输入不会被 Sluice 保存；推荐使用系统 credential helper / ssh-agent 以免反复询问。"))),
                 )
                 .child(
                     div()
@@ -350,7 +355,7 @@ impl Workbench {
                                 .cursor_pointer()
                                 .hover(move |s| s.bg(t.ink_05))
                                 .on_click(cx.listener(|this, _, window, cx| this.finish_askpass(false, window, cx)))
-                                .child("取消"),
+                                .child(tr("取消")),
                         )
                         .child(
                             div()
@@ -365,7 +370,7 @@ impl Workbench {
                                 .cursor_pointer()
                                 .hover(move |s| s.bg(t.cyan_deep))
                                 .on_click(cx.listener(|this, _, window, cx| this.finish_askpass(true, window, cx)))
-                                .child("确定"),
+                                .child(tr("确定")),
                         ),
                 ),
         )

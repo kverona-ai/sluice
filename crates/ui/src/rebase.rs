@@ -2,6 +2,7 @@
 //! reorder, then run git with the plan-driven editors. Conflicts fall into the
 //! in-progress banner (continue / skip / abort).
 
+use crate::i18n::tr;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     AppContext as _, Context, InteractiveElement, IntoElement, ParentElement, StatefulInteractiveElement,
@@ -68,7 +69,7 @@ impl Workbench {
                                 .collect();
                             d.selected = d.items.len().saturating_sub(1);
                         }
-                        Err(e) => this.toast(format!("读取 rebase 范围失败：{e:#}"), cx),
+                        Err(e) => this.toast(tf!("读取 rebase 范围失败：{}", format!("{e:#}")), cx),
                     }
                 }
                 cx.notify();
@@ -131,7 +132,7 @@ impl Workbench {
         self.overlay = None;
         self.rebase = None;
         self.run_git(
-            "交互式 rebase".to_string(),
+            tr("交互式 rebase").to_string(),
             move |cli| {
                 let snap = cli.snapshot_create("before interactive rebase")?;
                 plan.save(&plan_path)?;
@@ -141,8 +142,12 @@ impl Workbench {
                 let last = out.stderr.lines().last().unwrap_or("").trim().to_string();
                 Ok(format!(
                     "{}{}",
-                    if snap.is_some() { "已快照 · " } else { "" },
-                    if last.is_empty() { "完成".into() } else { last }
+                    if snap.is_some() { tr("已快照 · ") } else { "" },
+                    if last.is_empty() {
+                        tr("完成").into()
+                    } else {
+                        last
+                    }
                 ))
             },
             cx,
@@ -167,7 +172,7 @@ impl Workbench {
                     .py(px(12.))
                     .text_color(t.faint)
                     .text_size(px(12.5))
-                    .child("加载中…"),
+                    .child(tr("加载中…")),
             );
         }
         for (i, it) in d.items.iter().enumerate() {
@@ -220,9 +225,9 @@ impl Workbench {
                             .text_center()
                             .cursor_pointer()
                             .tooltip(move |window, cx| {
-                                gpui_component::tooltip::Tooltip::new(
+                                gpui_component::tooltip::Tooltip::new(tr(
                                     "点击切换：pick → reword → squash → fixup → drop（Space）",
-                                )
+                                ))
                                 .build(window, cx)
                             })
                             .on_click(cx.listener(move |this, _, _, cx| {
@@ -309,23 +314,19 @@ impl Workbench {
             .flex_col()
             .child(self.panel_header(
                 &t,
-                "交互式 rebase",
-                format!(
-                    "{} 个提交 · 基点 {}",
-                    d.items.len(),
-                    d.base
+                tr("交互式 rebase"),
+                tf!("{} 个提交 · 基点 {}", d.items.len(), d.base
                         .clone()
                         .map(|b| match b.split_once('~') {
                             Some((sha, n)) => format!("{}~{n}", sha.chars().take(8).collect::<String>()),
                             None => b.chars().take(10).collect::<String>(),
                         })
-                        .unwrap_or_else(|| "--root".into())
-                ),
+                        .unwrap_or_else(|| "--root".into())),
                 cx,
             ))
             .child(
                 div().px(px(16.)).pt(px(8.)).pb(px(2.)).text_size(px(11.5)).text_color(t.faint).child(
-                    "↑↓ 选择 · Space 切换动作 · ⌥↑ / ⌥↓ 调整顺序 · Enter 开始。开始前自动创建时光机快照；冲突时用进行中横幅 continue / abort。",
+                    tr("↑↓ 选择 · Space 切换动作 · ⌥↑ / ⌥↓ 调整顺序 · Enter 开始。开始前自动创建时光机快照；冲突时用进行中横幅 continue / abort。"),
                 ),
             )
             .child(rows)
@@ -337,7 +338,7 @@ impl Workbench {
                         .flex()
                         .flex_col()
                         .gap(px(4.))
-                        .child(div().text_size(px(11.)).text_color(t.faint).child("新的提交信息（reword / squash 结果）"))
+                        .child(div().text_size(px(11.)).text_color(t.faint).child(tr("新的提交信息（reword / squash 结果）")))
                         .child(
                             div()
                                 .border_1()
@@ -360,7 +361,7 @@ impl Workbench {
                     .py(px(10.))
                     .border_t_1()
                     .border_color(t.line_soft)
-                    .child(div().text_size(px(11.5)).text_color(t.faint).child("等价：git rebase -i，由 sluice seq-editor / editor 按计划执行"))
+                    .child(div().text_size(px(11.5)).text_color(t.faint).child(tr("等价：git rebase -i，由 sluice seq-editor / editor 按计划执行")))
                     .child(div().ml_auto())
                     .child(
                         div()
@@ -378,7 +379,7 @@ impl Workbench {
                                 this.rebase = None;
                                 cx.notify();
                             }))
-                            .child("取消"),
+                            .child(tr("取消")),
                     )
                     .child(
                         div()
@@ -393,7 +394,7 @@ impl Workbench {
                             .cursor_pointer()
                             .hover(move |s| s.bg(t.cyan_deep))
                             .on_click(cx.listener(|this, _, _, cx| this.rebase_start(cx)))
-                            .child("开始 rebase"),
+                            .child(tr("开始 rebase")),
                     ),
             )
             .into_any_element()
