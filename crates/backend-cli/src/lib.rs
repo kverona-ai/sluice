@@ -20,6 +20,23 @@ use sluice_core::*;
 pub use status::parse_porcelain_v2;
 
 #[derive(Clone, Debug)]
+pub struct StashEntry {
+    /// e.g. `stash@{0}`
+    pub id: String,
+    pub sha: String,
+    pub time: i64,
+    pub message: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct SnapshotEntry {
+    pub refname: String,
+    pub sha: String,
+    pub time: i64,
+    pub message: String,
+}
+
+#[derive(Clone, Debug)]
 pub struct CliOutput {
     pub status: i32,
     pub stdout: Vec<u8>,
@@ -316,6 +333,231 @@ impl GitCli {
             }
         }
         self.expect_ok(self.run(&args)?, "git push")
+    }
+
+    // ----- branches (M3) ---------------------------------------------------
+
+    /// `git checkout <target>`; on dirty-tree failure the caller may retry with `smart` =
+    /// stash → checkout → stash pop (IDEA "Smart Checkout", 05 §6).
+    pub fn checkout(&self, target: &str) -> Result<CliOutput> {
+        self.expect_ok(self.run(&["checkout", target])?, "git checkout")
+    }
+
+    pub fn smart_checkout(&self, target: &str) -> Result<CliOutput> {
+        self.expect_ok(
+            self.run(&["stash", "push", "-u", "-m", "sluice: smart checkout"])?,
+            "git stash push",
+        )?;
+        let out = self.run(&["checkout", target])?;
+        if !out.ok() {
+            // restore and report
+            let _ = self.run(&["stash", "pop"]);
+            return self.expect_ok(out, "git checkout");
+        }
+        self.expect_ok(self.run(&["stash", "pop"])?, "git stash pop")?;
+        Ok(out)
+    }
+
+    pub fn branch_create(&self, name: &str, from: Option<&str>, checkout: bool) -> Result<()> {
+        if checkout {
+            let mut args = vec!["checkout", "-b", name];
+            if let Some(f) = from {
+                args.push(f);
+            }
+            self.expect_ok(self.run(&args)?, "git checkout -b").map(|_| ())
+        } else {
+            let mut args = vec!["branch", name];
+            if let Some(f) = from {
+                args.push(f);
+            }
+            self.expect_ok(self.run(&args)?, "git branch").map(|_| ())
+        }
+    }
+
+    pub fn branch_delete(&self, name: &str, force: bool) -> Result<()> {
+        let flag = if force { "-D" } else { "-d" };
+        self.expect_ok(self.run(&["branch", flag, name])?, "git branch delete")
+            .map(|_| ())
+    }
+
+    pub fn merge(&self, branch: &str, no_ff: bool) -> Result<CliOutput> {
+        let mut args = vec!["merge"];
+        if no_ff {
+            args.push("--no-ff");
+        }
+        args.push(branch);
+        self.expect_ok(self.run(&args)?, "git merge")
+    }
+
+    pub fn rebase_onto(&self, upstream: &str) -> Result<CliOutput> {
+        self.expect_ok(self.run(&["rebase", upstream])?, "git rebase")
+    }
+
+    /// continue / abort / skip for the operation in progress.
+    pub fn op_step(&self, op: InProgressOp, step: &str) -> Result<CliOutput> {
+        let sub = match op {
+            InProgressOp::Merge => match step {
+                "abort" => vec!["merge", "--abort"],
+                _ => vec!["merge", "--continue"],
+            },
+            InProgressOp::Rebase => vec![
+                "rebase",
+                match step {
+                    "abort" => "--abort",
+                    "skip" => "--skip",
+                    _ => "--continue",
+                },
+            ],
+            InProgressOp::CherryPick => vec![
+                "cherry-pick",
+                match step {
+                    "abort" => "--abort",
+                    "skip" => "--skip",
+                    _ => "--continue",
+                },
+            ],
+            InProgressOp::Revert => vec![
+                "revert",
+                match step {
+                    "abort" => "--abort",
+                    "skip" => "--skip",
+                    _ => "--continue",
+                },
+            ],
+            InProgressOp::Bisect => vec!["bisect", "reset"],
+        };
+        self.expect_ok(self.run(&sub)?, "git operation step")
+    }
+
+    // ----- history ops -----------------------------------------------------
+
+    pub fn cherry_pick(&self, sha: &str, record_origin: bool) -> Result<CliOutput> {
+        let mut args = vec!["cherry-pick"];
+        if record_origin {
+            args.push("-x");
+        }
+        args.push(sha);
+        self.expect_ok(self.run(&args)?, "git cherry-pick")
+    }
+
+    pub fn revert(&self, sha: &str) -> Result<CliOutput> {
+        self.expect_ok(self.run(&["revert", "--no-edit", sha])?, "git revert")
+    }
+
+    /// mode: "soft" | "mixed" | "hard". Callers snapshot first for hard resets.
+    pub fn reset(&self, mode: &str, target: &str) -> Result<CliOutput> {
+        let flag = format!("--{mode}");
+        self.expect_ok(self.run(&["reset", &flag, target])?, "git reset")
+    }
+
+    // ----- stash -----------------------------------------------------------
+
+    pub fn stash_list(&self) -> Result<Vec<StashEntry>> {
+        let out = self.run_read(&["stash", "list", "--format=%gd%x1f%H%x1f%ct%x1f%gs"])?;
+        let out = self.expect_ok(out, "git stash list")?;
+        let mut v = Vec::new();
+        for line in out.stdout_str().lines() {
+            let parts: Vec<&str> = line.split('\x1f').collect();
+            if parts.len() >= 4 {
+                v.push(StashEntry {
+                    id: parts[0].to_string(),
+                    sha: parts[1].to_string(),
+                    time: parts[2].parse().unwrap_or(0),
+                    message: parts[3].to_string(),
+                });
+            }
+        }
+        Ok(v)
+    }
+
+    pub fn stash_push(&self, message: &str, include_untracked: bool, keep_index: bool) -> Result<()> {
+        let mut args = vec!["stash", "push"];
+        if include_untracked {
+            args.push("-u");
+        }
+        if keep_index {
+            args.push("--keep-index");
+        }
+        if !message.is_empty() {
+            args.push("-m");
+            args.push(message);
+        }
+        self.expect_ok(self.run(&args)?, "git stash push").map(|_| ())
+    }
+
+    pub fn stash_apply(&self, id: &str, pop: bool) -> Result<()> {
+        let sub = if pop { "pop" } else { "apply" };
+        self.expect_ok(self.run(&["stash", sub, id])?, "git stash apply")
+            .map(|_| ())
+    }
+
+    pub fn stash_drop(&self, id: &str) -> Result<()> {
+        self.expect_ok(self.run(&["stash", "drop", id])?, "git stash drop")
+            .map(|_| ())
+    }
+
+    // ----- safety-net snapshots (time machine v1, 05 §6) -------------------
+
+    /// Capture worktree + index as a stash-like commit under refs/sluice/snapshots/.
+    /// Returns None when there is nothing to snapshot (clean tree).
+    pub fn snapshot_create(&self, label: &str) -> Result<Option<String>> {
+        let out = self.expect_ok(self.run(&["stash", "create", label])?, "git stash create")?;
+        let sha = out.stdout_str().trim().to_string();
+        if sha.is_empty() {
+            return Ok(None);
+        }
+        let slug: String = label
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() {
+                    c.to_ascii_lowercase()
+                } else {
+                    '-'
+                }
+            })
+            .collect::<String>()
+            .trim_matches('-')
+            .chars()
+            .take(24)
+            .collect();
+        let ts = chrono::Local::now().format("%Y%m%d-%H%M%S");
+        let refname = format!("refs/sluice/snapshots/{ts}-{slug}");
+        self.expect_ok(self.run(&["update-ref", &refname, &sha])?, "git update-ref")?;
+        Ok(Some(sha))
+    }
+
+    pub fn snapshot_list(&self) -> Result<Vec<SnapshotEntry>> {
+        let out = self.run_read(&[
+            "for-each-ref",
+            "--sort=-creatordate",
+            "--format=%(refname)%1f%(objectname)%1f%(creatordate:unix)%1f%(subject)",
+            "refs/sluice/snapshots/",
+        ])?;
+        let out = self.expect_ok(out, "git for-each-ref")?;
+        let mut v = Vec::new();
+        for line in out.stdout_str().lines() {
+            let parts: Vec<&str> = line.split('\x1f').collect();
+            if parts.len() >= 4 {
+                v.push(SnapshotEntry {
+                    refname: parts[0].to_string(),
+                    sha: parts[1].to_string(),
+                    time: parts[2].parse().unwrap_or(0),
+                    message: parts[3].to_string(),
+                });
+            }
+        }
+        Ok(v)
+    }
+
+    /// Apply a snapshot's changes back onto the worktree (stash-apply semantics).
+    pub fn snapshot_apply(&self, sha: &str) -> Result<()> {
+        self.expect_ok(self.run(&["stash", "apply", sha])?, "git stash apply (snapshot)")
+            .map(|_| ())
+    }
+
+    pub fn snapshot_delete(&self, refname: &str) -> Result<()> {
+        self.expect_ok(self.run(&["update-ref", "-d", refname])?, "git update-ref -d")
+            .map(|_| ())
     }
 
     /// Undo the last (unpushed) commit keeping its changes staged (05 §5).

@@ -9,6 +9,7 @@ pub mod console;
 pub mod diff_view;
 pub mod icons;
 pub mod log;
+pub mod overlays;
 pub mod theme;
 pub mod workbench;
 
@@ -57,6 +58,17 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-alt-\\", workbench::ToggleSideBySide, ctx),
         KeyBinding::new("ctrl-alt-\\", workbench::ToggleSideBySide, ctx),
         // Windows / Linux: the same bindings with ctrl
+        KeyBinding::new("ctrl-shift-`", workbench::OpenBranches, ctx),
+        KeyBinding::new("ctrl-~", workbench::OpenBranches, ctx),
+        KeyBinding::new("cmd-b", workbench::OpenBranches, ctx),
+        KeyBinding::new("ctrl-b", workbench::OpenBranches, ctx),
+        KeyBinding::new("cmd-5", workbench::OpenStash, ctx),
+        KeyBinding::new("ctrl-5", workbench::OpenStash, ctx),
+        KeyBinding::new("cmd-7", workbench::OpenSnapshots, ctx),
+        KeyBinding::new("ctrl-7", workbench::OpenSnapshots, ctx),
+        KeyBinding::new("cmd-,", workbench::OpenSettings, ctx),
+        KeyBinding::new("cmd-shift-k", workbench::OpenPush, ctx),
+        KeyBinding::new("ctrl-shift-k", workbench::OpenPush, ctx),
         KeyBinding::new("alt-9", workbench::ShowLog, ctx),
         KeyBinding::new("alt-0", workbench::ShowChanges, ctx),
         KeyBinding::new("alt-6", workbench::ShowConsole, ctx),

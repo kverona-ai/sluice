@@ -62,7 +62,7 @@ impl Workbench {
     }
 
     /// Run a git write on the background executor, toast the outcome, reload.
-    fn run_git<F>(&mut self, what: &'static str, f: F, cx: &mut Context<Self>)
+    pub(crate) fn run_git<F>(&mut self, what: impl Into<String>, f: F, cx: &mut Context<Self>)
     where
         F: FnOnce(&sluice_backend_cli::GitCli) -> anyhow::Result<String> + Send + 'static,
     {
@@ -70,6 +70,7 @@ impl Workbench {
             self.toast("裸仓库没有工作区，无法执行写操作", cx);
             return;
         };
+        let what = what.into();
         self.commit_busy = true;
         cx.notify();
         cx.spawn(async move |this, cx| {
@@ -77,8 +78,9 @@ impl Workbench {
             this.update(cx, |this, cx| {
                 this.commit_busy = false;
                 match res {
+                    Ok(msg) if msg.is_empty() => this.toast(format!("{what}：完成"), cx),
                     Ok(msg) => this.toast(format!("{what}：{msg}"), cx),
-                    Err(e) => this.toast(format!("{what}失败：{}", first_line(&format!("{e:#}"))), cx),
+                    Err(e) => this.toast(format!("{what} 失败：{}", first_line(&format!("{e:#}"))), cx),
                 }
                 this.refresh(cx);
             })
@@ -387,18 +389,6 @@ impl Workbench {
         .detach();
     }
 
-    pub(crate) fn git_push(&mut self, cx: &mut Context<Self>) {
-        self.run_git(
-            "推送",
-            |cli| {
-                let out = cli.push(None, None, false, false)?;
-                let l = first_line(&out.stderr);
-                Ok(if l.is_empty() { "完成".into() } else { l })
-            },
-            cx,
-        );
-    }
-
     pub(crate) fn git_pull(&mut self, cx: &mut Context<Self>) {
         self.run_git(
             "拉取",
@@ -490,13 +480,26 @@ impl Workbench {
                 .child("选择左侧文件查看 diff；勾选 = 纳入暂存区")
                 .into_any_element()
         };
+        let banner = self
+            .changes
+            .as_ref()
+            .and_then(|c| c.status.in_progress)
+            .map(|op| self.op_banner(op, cx));
         div()
             .flex_1()
             .min_w_0()
             .min_h_0()
             .flex()
-            .child(self.render_change_tree(window, cx))
-            .child(right)
+            .flex_col()
+            .children(banner)
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .child(self.render_change_tree(window, cx))
+                    .child(right),
+            )
     }
 
     fn render_work_diff_pane(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -620,7 +623,6 @@ impl Workbench {
         let open = self.work_file.clone();
         let staged_n = changes.as_ref().map(|c| c.status.staged().count()).unwrap_or(0);
         let total_n = changes.as_ref().map(|c| c.status.entries.len()).unwrap_or(0);
-        let in_progress = changes.as_ref().and_then(|c| c.status.in_progress);
 
         let mut tree = div()
             .id("change-tree")
@@ -730,9 +732,27 @@ impl Workbench {
                     let path = e.path.clone();
                     let path2 = e.path.clone();
                     let old_path = e.old_path.clone();
+                    let ctx_path = e.path.clone();
+                    let ctx_old = e.old_path.clone();
+                    let ctx_untracked = e.untracked;
                     tree = tree.child(
                         div()
                             .id(("wf", i))
+                            .on_mouse_down(
+                                gpui::MouseButton::Right,
+                                cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                                    this.show_ctx_menu(
+                                        ev,
+                                        crate::overlays::CtxTarget::WorkFile {
+                                            path: ctx_path.clone(),
+                                            old_path: ctx_old.clone(),
+                                            staged: is_staged_row,
+                                            untracked: ctx_untracked,
+                                        },
+                                        cx,
+                                    )
+                                }),
+                            )
                             .flex()
                             .items_center()
                             .gap(px(7.))
@@ -831,18 +851,6 @@ impl Workbench {
                 crate::workbench::chrome_button("refresh-changes", &t, "arrow-clockwise", "刷新状态", false)
                     .on_click(cx.listener(|this, _, _, cx| this.reload_changes(cx))),
             )
-            .when_some(in_progress, |d, op| {
-                d.child(
-                    div()
-                        .px(px(8.))
-                        .py(px(1.))
-                        .border_1()
-                        .border_color(t.mag)
-                        .text_color(t.mag_deep)
-                        .text_size(px(11.5))
-                        .child(format!("{op:?} 进行中")),
-                )
-            })
             .child(div().ml_auto().child(format!("{staged_n} / {total_n} 已暂存")));
 
         div()

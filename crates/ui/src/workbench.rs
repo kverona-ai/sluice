@@ -6,11 +6,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
+use gpui::WindowControlArea;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     App, AppContext as _, ClickEvent, Context, Entity, FocusHandle, InteractiveElement, IntoElement,
-    MouseButton, ParentElement, Render, ScrollStrategy, StatefulInteractiveElement, Styled, Task,
-    UniformListScrollHandle, Window, actions, div, px,
+    ParentElement, Render, ScrollStrategy, StatefulInteractiveElement, Styled, Task, UniformListScrollHandle,
+    Window, actions, div, px,
 };
 use gpui_component::input::{InputEvent, InputState};
 use sluice_core::diff::{DiffOptions, FileDiff};
@@ -20,8 +21,10 @@ use sluice_watch::RepoWatcher;
 
 use crate::diff_view::DiffView;
 use crate::icons::{icon, icon_b};
+use crate::overlays::{CtxMenu, Overlay};
 use crate::theme::{FONT_BODY, FONT_HEADING, Theme};
 use gpui_component::tooltip::Tooltip;
+use sluice_backend_cli::{SnapshotEntry, StashEntry};
 
 actions!(
     workbench,
@@ -43,6 +46,11 @@ actions!(
         ToggleSideBySide,
         CommitAction,
         FocusCommit,
+        OpenBranches,
+        OpenStash,
+        OpenSnapshots,
+        OpenSettings,
+        OpenPush,
         StageAll,
         UnstageAll,
         ToggleSelected,
@@ -127,6 +135,18 @@ pub struct Workbench {
     pub console_filter: Option<ConsoleKind>,
     pub console_verbose: bool,
     pub sidebar_hidden: bool,
+    pub rail_expanded: bool,
+    pub overlay: Option<Overlay>,
+    pub ctx_menu: Option<CtxMenu>,
+    pub branch_filter: Entity<InputState>,
+    pub new_branch_name: Entity<InputState>,
+    pub stash_msg: Entity<InputState>,
+    pub stash_untracked: bool,
+    pub stashes: Vec<StashEntry>,
+    pub snapshots: Vec<SnapshotEntry>,
+    pub push_lease: bool,
+    pub push_upstream: bool,
+    pub telemetry: bool,
     /// Selection history for the ◀ ▶ title-bar buttons (commit ids).
     pub history: Vec<Oid>,
     pub history_ix: usize,
@@ -149,6 +169,15 @@ impl Workbench {
         });
         let author_input =
             cx.new(|cx| InputState::new(window, cx).placeholder("Name <email>（留空沿用 git 配置）"));
+        let branch_filter = cx.new(|cx| InputState::new(window, cx).placeholder("搜索分支 / 标签"));
+        let new_branch_name = cx.new(|cx| InputState::new(window, cx).placeholder("feat/my-branch"));
+        let stash_msg = cx.new(|cx| InputState::new(window, cx).placeholder("stash 说明（可选）"));
+        cx.subscribe(&branch_filter, |_, _, ev: &InputEvent, cx| {
+            if matches!(ev, InputEvent::Change) {
+                cx.notify();
+            }
+        })
+        .detach();
         cx.subscribe(&search, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change | InputEvent::PressEnter { .. }) {
                 this.filter.text = this.search.read(cx).value().to_string();
@@ -205,6 +234,18 @@ impl Workbench {
             console_filter: None,
             console_verbose: false,
             sidebar_hidden: false,
+            rail_expanded: false,
+            overlay: None,
+            ctx_menu: None,
+            branch_filter,
+            new_branch_name,
+            stash_msg,
+            stash_untracked: true,
+            stashes: Vec::new(),
+            snapshots: Vec::new(),
+            push_lease: false,
+            push_upstream: false,
+            telemetry: false,
             history: Vec::new(),
             history_ix: 0,
             _watcher: None,
@@ -625,13 +666,13 @@ impl Workbench {
             .border_b_1()
             .border_color(t.line_soft)
             .when(is_mac, |d| {
-                d.on_mouse_down(MouseButton::Left, |_, window, _| window.start_window_move())
-                    .on_click(|ev: &ClickEvent, window, _| {
-                        if ev.click_count() == 2 {
-                            window.titlebar_double_click();
-                        }
-                    })
+                d.on_click(|ev: &ClickEvent, window, _| {
+                    if ev.click_count() == 2 {
+                        window.titlebar_double_click();
+                    }
+                })
             })
+            .when(!is_mac, |d| d.window_control_area(WindowControlArea::Drag))
             .child(
                 div()
                     .absolute()
@@ -773,8 +814,45 @@ impl Workbench {
                                         cx.listener(|this, _, _, cx| this.not_yet("更多操作菜单", "M2", cx)),
                                     ),
                             ),
-                    ),
+                    )
+                    .children(self.render_win_caption_buttons()),
             )
+    }
+
+    /// Windows caption buttons — drawn by us, wired to the OS via
+    /// `window_control_area` (gpui 0.2.2 has no native-caption path on Windows).
+    fn render_win_caption_buttons(&self) -> Option<impl IntoElement> {
+        if cfg!(target_os = "macos") {
+            return None;
+        }
+        let t = self.theme;
+        let btn = |area: WindowControlArea, name: &'static str, danger: bool| {
+            div()
+                .w(px(44.))
+                .h(px(40.))
+                .flex()
+                .items_center()
+                .justify_center()
+                .window_control_area(area)
+                .hover(move |s| {
+                    if danger {
+                        s.bg(gpui::rgb(0xc42b1c))
+                    } else {
+                        s.bg(t.ink_08)
+                    }
+                })
+                .child(icon_b(name, px(12.), t.muted))
+        };
+        Some(
+            div()
+                .flex()
+                .items_center()
+                .ml(px(6.))
+                .mr(px(-18.))
+                .child(btn(WindowControlArea::Min, "minus", false))
+                .child(btn(WindowControlArea::Max, "square", false))
+                .child(btn(WindowControlArea::Close, "x", true)),
+        )
     }
 
     fn focus_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -786,92 +864,153 @@ impl Workbench {
     fn render_rail(&self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let tab = self.tab;
+        let expanded = self.rail_expanded;
+        let item = |id: &'static str,
+                    icon: &'static str,
+                    label: &'static str,
+                    tip: &'static str,
+                    active: bool,
+                    tone: Option<gpui::Rgba>| {
+            rail_item(id, &t, icon, label, tip, active, expanded, tone)
+        };
         div()
-            .w(px(34.))
+            .w(px(if expanded { 118. } else { 34. }))
             .flex_none()
             .flex()
             .flex_col()
-            .items_center()
-            .gap(px(6.))
-            .py(px(8.))
+            .gap(px(2.))
+            .pt(px(6.))
+            .pb(px(2.))
             .bg(t.ink_05)
             .border_r_1()
             .border_color(t.line_55)
             .child(
-                rail_button("rail-log", &t, "git-branch", "日志 / 提交图 ⌘9", tab == Tab::Log)
-                    .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Log, cx))),
+                div().flex().justify_end().px(px(4.)).pb(px(2.)).child(
+                    div()
+                        .id("rail-expand")
+                        .w(px(20.))
+                        .h(px(20.))
+                        .flex()
+                        .items_center()
+                        .justify_center()
+                        .rounded(px(5.))
+                        .cursor_pointer()
+                        .hover(move |s| s.bg(t.ink_08))
+                        .tooltip(move |window, cx| {
+                            Tooltip::new(if expanded {
+                                "收起工具栏"
+                            } else {
+                                "展开工具栏（显示文字说明）"
+                            })
+                            .build(window, cx)
+                        })
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.rail_expanded = !this.rail_expanded;
+                            cx.notify();
+                        }))
+                        .child(icon_b(
+                            if expanded { "caret-left" } else { "caret-right" },
+                            px(12.),
+                            t.muted,
+                        )),
+                ),
             )
             .child(
-                rail_button(
+                item(
+                    "rail-log",
+                    "git-branch",
+                    "日志",
+                    "日志 / 提交图 ⌘9",
+                    tab == Tab::Log,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Log, cx))),
+            )
+            .child(
+                item(
                     "rail-changes",
-                    &t,
                     "git-commit",
+                    "变更",
                     "本地变更 / 提交 ⌘0",
                     tab == Tab::Changes,
+                    None,
                 )
                 .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Changes, cx))),
             )
             .child(
-                rail_button("rail-merge", &t, "git-merge", "分支 / 合并 / rebase（M3）", false).on_click(
-                    cx.listener(|this, _, _, cx| this.not_yet("分支面板与 merge / rebase", "M3", cx)),
-                ),
+                item("rail-branches", "git-merge", "分支", "分支面板 ⌃⇧`", false, None)
+                    .on_click(cx.listener(|this, _, _, cx| this.open_branches(cx))),
             )
             .child(
-                rail_button("rail-pull", &t, "arrow-line-down", "拉取（git pull）", false)
-                    .on_click(cx.listener(|this, _, _, cx| this.git_pull(cx))),
-            )
-            .child(
-                rail_button("rail-push", &t, "arrow-line-up", "推送（git push）", false)
-                    .on_click(cx.listener(|this, _, _, cx| this.git_push(cx))),
-            )
-            .child(
-                rail_button("rail-star", &t, "star", "收藏分支（P2）", false)
-                    .on_click(cx.listener(|this, _, _, cx| this.not_yet("收藏分支", "P2 backlog", cx))),
-            )
-            .child(
-                rail_button(
-                    "rail-time",
-                    &t,
-                    "clock-counter-clockwise",
-                    "时光机 / 快照（M3）",
+                item(
+                    "rail-pull",
+                    "arrow-line-down",
+                    "拉取",
+                    "拉取（git pull）",
                     false,
+                    None,
                 )
-                .on_click(cx.listener(|this, _, _, cx| this.not_yet("时光机（快照回溯）", "M3", cx))),
+                .on_click(cx.listener(|this, _, _, cx| this.git_pull(cx))),
+            )
+            .child(
+                item(
+                    "rail-push",
+                    "arrow-line-up",
+                    "推送",
+                    "推送对话框 ⌘⇧K",
+                    false,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.open_push(cx))),
+            )
+            .child(
+                item("rail-stash", "tray", "Stash", "Stash 列表", false, None)
+                    .on_click(cx.listener(|this, _, _, cx| this.open_stashes(cx))),
+            )
+            .child(
+                item(
+                    "rail-time",
+                    "clock-counter-clockwise",
+                    "时光机",
+                    "时光机 / 快照（M3 完整版）",
+                    false,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.open_snapshots(cx))),
             )
             .child(
                 div()
                     .mt_auto()
                     .flex()
                     .flex_col()
-                    .items_center()
-                    .gap(px(6.))
+                    .gap(px(2.))
                     .child(
-                        rail_button_tone(
+                        item(
                             "rail-ai",
-                            &t,
                             "sparkle",
+                            "AI",
                             "AI 工具 / 待确认队列（M4）",
                             false,
-                            t.mag,
+                            Some(t.mag),
                         )
                         .on_click(
                             cx.listener(|this, _, _, cx| this.not_yet("AI 工具接入与待确认队列", "M4", cx)),
                         ),
                     )
                     .child(
-                        rail_button(
+                        item(
                             "rail-console",
-                            &t,
                             "terminal-window",
+                            "Console",
                             "Console ⌘6",
                             tab == Tab::Console,
+                            None,
                         )
                         .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Console, cx))),
                     )
                     .child(
-                        rail_button("rail-settings", &t, "gear", "设置 / Keymap（M4）", false).on_click(
-                            cx.listener(|this, _, _, cx| this.not_yet("设置与 keymap 预设", "M4", cx)),
-                        ),
+                        item("rail-settings", "gear", "设置", "设置 / Keymap", false, None)
+                            .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
                     ),
             )
     }
@@ -923,9 +1062,16 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)))
             .on_action(cx.listener(|this, _: &Escape, window, cx| {
-                this.close_diff(cx);
+                if !this.dismiss_top(cx) {
+                    this.close_diff(cx);
+                }
                 this.focus.focus(window);
             }))
+            .on_action(cx.listener(|this, _: &OpenBranches, _, cx| this.open_branches(cx)))
+            .on_action(cx.listener(|this, _: &OpenStash, _, cx| this.open_stashes(cx)))
+            .on_action(cx.listener(|this, _: &OpenSnapshots, _, cx| this.open_snapshots(cx)))
+            .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
+            .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
             .on_action(cx.listener(|this, _: &NextHunk, _, cx| this.jump_hunk(1, cx)))
             .on_action(cx.listener(|this, _: &PrevHunk, _, cx| this.jump_hunk(-1, cx)))
             .on_action(cx.listener(|this, _: &ToggleSideBySide, _, cx| {
@@ -946,6 +1092,7 @@ impl Render for Workbench {
             .font_family(FONT_BODY)
             .text_size(px(13.))
             .child(self.render_titlebar(cx))
+            .children(self.render_win_menu(cx))
             .child(
                 div()
                     .flex_1()
@@ -955,6 +1102,73 @@ impl Render for Workbench {
                     .child(body),
             )
             .children(self.render_toast())
+            .children(self.render_overlay(window, cx))
+            .children(self.render_ctx_menu(window, cx))
+    }
+}
+
+impl Workbench {
+    /// Windows-only mnemonic menu row (prototype win variant). Menus arrive with M4.
+    fn render_win_menu(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        if cfg!(target_os = "macos") {
+            return None;
+        }
+        let t = self.theme;
+        let entry = |id: &'static str, label: &'static str| {
+            div()
+                .id(id)
+                .px(px(6.))
+                .py(px(2.))
+                .rounded(px(4.))
+                .cursor_pointer()
+                .hover(move |s| s.bg(t.ink_08))
+                .child(label)
+        };
+        Some(
+            div()
+                .h(px(26.))
+                .flex_none()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .px(px(10.))
+                .bg(t.paper)
+                .border_b_1()
+                .border_color(t.line_soft)
+                .text_size(px(12.))
+                .text_color(t.muted)
+                .child(
+                    entry("wm-file", "文件(F)")
+                        .on_click(cx.listener(|this, _, _, cx| this.not_yet("应用菜单", "M4", cx))),
+                )
+                .child(
+                    entry("wm-edit", "编辑(E)")
+                        .on_click(cx.listener(|this, _, _, cx| this.not_yet("应用菜单", "M4", cx))),
+                )
+                .child(
+                    entry("wm-view", "视图(V)")
+                        .on_click(cx.listener(|this, _, _, cx| this.not_yet("应用菜单", "M4", cx))),
+                )
+                .child(div().text_color(t.cyan).child(
+                    entry("wm-git", "Git(G)").on_click(cx.listener(|this, _, _, cx| this.open_branches(cx))),
+                ))
+                .child(
+                    entry("wm-ai", "AI 工具(A)")
+                        .on_click(cx.listener(|this, _, _, cx| this.not_yet("AI 工具菜单", "M4", cx))),
+                )
+                .child(
+                    entry("wm-help", "帮助(H)")
+                        .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
+                )
+                .child(
+                    div()
+                        .ml_auto()
+                        .font_family(crate::theme::FONT_MONO)
+                        .text_size(px(11.))
+                        .text_color(t.faint)
+                        .child("Ctrl+K 提交 · Ctrl+Shift+K 推送"),
+                ),
+        )
     }
 }
 
@@ -1041,40 +1255,51 @@ pub fn chrome_button(
         .child(icon_b(name, px(15.), color))
 }
 
-/// 28×28 icon button for the left tool rail.
-pub fn rail_button(
+/// Tool-rail entry: a 28×28 icon button when collapsed, icon + label row when expanded.
+#[allow(clippy::too_many_arguments)]
+pub fn rail_item(
     id: &'static str,
     t: &Theme,
     name: &'static str,
+    label: &'static str,
     tip: &'static str,
     active: bool,
-) -> gpui::Stateful<gpui::Div> {
-    rail_button_tone(id, t, name, tip, active, if active { t.cyan } else { t.muted })
-}
-
-pub fn rail_button_tone(
-    id: &'static str,
-    t: &Theme,
-    name: &'static str,
-    tip: &'static str,
-    active: bool,
-    color: gpui::Rgba,
+    expanded: bool,
+    tone: Option<gpui::Rgba>,
 ) -> gpui::Stateful<gpui::Div> {
     let t2 = *t;
-    div()
+    let color = tone.unwrap_or(if active { t.cyan } else { t.muted });
+    let base = div()
         .id(id)
-        .w(px(28.))
-        .h(px(28.))
-        .flex()
-        .items_center()
-        .justify_center()
         .rounded(px(7.))
         .cursor_pointer()
         .when(active, |d| d.bg(t2.cyan_16))
         .hover(move |s| s.bg(t2.ink_08))
         .active(move |s| s.bg(t2.ink_13))
-        .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
-        .child(icon(name, px(17.), color))
+        .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx));
+    if expanded {
+        base.mx(px(4.))
+            .h(px(28.))
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .px(px(6.))
+            .child(icon(name, px(16.), color))
+            .child(
+                div()
+                    .text_size(px(12.))
+                    .text_color(if active { t2.cyan_deep } else { t2.ink })
+                    .child(label),
+            )
+    } else {
+        base.mx(px(3.))
+            .w(px(28.))
+            .h(px(28.))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(icon(name, px(17.), color))
+    }
 }
 
 #[allow(dead_code)]

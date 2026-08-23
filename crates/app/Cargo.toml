@@ -19,6 +19,7 @@ sluice-backend-gix.workspace = true
 sluice-graph.workspace = true
 sluice-domain.workspace = true
 sluice-ui.workspace = true
+sluice-bridge.workspace = true
 gpui.workspace = true
 gpui-component.workspace = true
 anyhow.workspace = true

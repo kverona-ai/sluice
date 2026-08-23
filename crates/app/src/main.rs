@@ -41,7 +41,7 @@ enum Command {
         #[arg(long)]
         topo: bool,
     },
-    /// Serve the built-in MCP server over stdio (M4, 03 §3).
+    /// Serve the built-in read-only MCP server over stdio (03 §2).
     Mcp {
         #[command(subcommand)]
         cmd: McpCommand,
@@ -60,7 +60,11 @@ enum Command {
 
 #[derive(Subcommand, Debug)]
 enum McpCommand {
-    Serve,
+    Serve {
+        /// Repository to serve (default: current directory).
+        #[arg(long)]
+        repo: Option<PathBuf>,
+    },
 }
 
 actions!(sluice, [Quit]);
@@ -75,7 +79,12 @@ fn main() -> Result<()> {
         None => run_app(cli.path),
         Some(Command::Open { path }) => run_app(path.or(cli.path)),
         Some(Command::Log { path, limit, topo }) => dump_log(path.or(cli.path), limit, topo),
-        Some(Command::Mcp { .. }) => not_yet("sluice mcp serve", "M4 — 03 §3 / 05 §7.2"),
+        Some(Command::Mcp {
+            cmd: McpCommand::Serve { repo },
+        }) => {
+            let path = resolve_path(repo.or(cli.path))?;
+            sluice_bridge::mcp::McpServer::new(path).serve()
+        }
         Some(Command::Hook { tool }) => not_yet(&format!("sluice hook {tool}"), "M4 — 03 §2"),
         Some(Command::Askpass { .. }) => not_yet("sluice askpass", "M2 — 05 §3"),
         Some(Command::Editor { .. }) => not_yet("sluice editor", "M3 — 05 §6"),
@@ -174,7 +183,7 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                 titlebar: Some(TitlebarOptions {
                     title: Some(title.clone().into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(14.), px(20.))),
+                    traffic_light_position: Some(point(px(12.), px(8.))),
                 }),
                 window_min_size: Some(size(px(1100.), px(680.))),
                 window_background: WindowBackgroundAppearance::Opaque,

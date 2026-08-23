@@ -6700,6 +6700,7 @@ dependencies = [
  "gpui",
  "gpui-component",
  "sluice-backend-gix",
+ "sluice-bridge",
  "sluice-core",
  "sluice-domain",
  "sluice-graph",
@@ -6742,6 +6743,8 @@ dependencies = [
  "anyhow",
  "serde",
  "serde_json",
+ "sluice-backend-cli",
+ "sluice-backend-gix",
  "sluice-core",
  "tracing",
 ]

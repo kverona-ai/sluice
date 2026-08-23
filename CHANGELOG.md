@@ -6,6 +6,28 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Branches panel** (`⌘B` / `⌃⇧\``): searchable local + remote list, click-to-checkout,
+  per-branch merge / rebase actions, delete with confirmation, new-branch dialog (also from any
+  commit's context menu).
+- **Right-click context menus**: commits (copy hash, new branch from, checkout detached,
+  cherry-pick, revert, reset soft/mixed/hard, undo last unpushed commit) and working-tree files
+  (stage/unstage, discard with safety snapshot, copy path).
+- **Stash panel** (`⌘5`): push (message + include-untracked), apply / pop / drop.
+- **Time machine v1** (`⌘7`): automatic safety snapshots (`refs/sluice/snapshots/*`) before
+  discard / reset --hard, manual snapshots, restore & delete.
+- **Push dialog** (`⌘⇧K`): ahead count, `--force-with-lease`, `-u` upstream.
+- **Settings** (`⌘,`): keymap reference, telemetry opt-in (default off), about.
+- **In-progress operation banner**: merge / rebase / cherry-pick / revert with
+  continue · skip · abort.
+- **Read-only MCP server**: `sluice mcp serve --repo <path>` (stdio, JSON-RPC) with
+  `repo_status`, `list_changes`, `get_diff`, `log_query` — the first slice of the AI bridge.
+- **Expandable tool rail**: labels next to icons; every chrome control has a hover tooltip.
+- Windows: self-drawn caption buttons wired through `window_control_area` (gpui 0.2.2 has no
+  native-caption path), mnemonic menu row.
+
+### Fixed
+- macOS traffic lights were half-clipped: the position must sit inside the native ~28px
+  titlebar strip (gpui moves the real NSButtons; they are clipped by that superview).
 - AI commit drafts now support ten CLIs with per-tool headless invocation (stdin, prompt-arg +
   stdin, or single-arg modes): Claude Code, Codex CLI, Grok Build, DeepSeek Harness, Gemini CLI,
   Kimi Code, Qwen Code, opencode, GitHub Copilot CLI, Z Code (community wrapper). Aider is

@@ -626,6 +626,13 @@ impl Workbench {
                     items.push(
                         div()
                             .id(("commit", vix))
+                            .on_mouse_down(
+                                gpui::MouseButton::Right,
+                                cx.listener(move |this, ev: &gpui::MouseDownEvent, _, cx| {
+                                    this.select(vix, cx);
+                                    this.show_ctx_menu(ev, crate::overlays::CtxTarget::Commit(ix), cx)
+                                }),
+                            )
                             .w_full()
                             .h(px(ROW_H))
                             .flex()
