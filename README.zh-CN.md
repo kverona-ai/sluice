@@ -120,7 +120,7 @@ sluice ai connect                        # 把 Sluice 注册为它们的 MCP ser
 sluice mcp serve                         # stdio MCP server 本体（各工具实际启动的就是它）
 ```
 
-预编译的签名安装包（GitHub Releases、Homebrew、winget）将随首个 public beta 发布——在那之前，从源码构建是受支持的方式。想立即体验，可以用生成的演示仓库：
+打了 `v*` 标签的版本由 [Release 工作流](.github/workflows/release.yml) 在 macOS arm64 / x86_64 与 Windows x86_64 上构建并附到 GitHub Releases（含 `SHA256SUMS`）——目前是未签名预览（Gatekeeper / SmartScreen 会提示）；签名与公证随首个 public beta 提供，届时同步上 Homebrew / winget。想立即体验，可以用生成的演示仓库：
 
 ```bash
 fixtures/make-sample.sh && cargo run --release -p sluice -- open target/fixtures/sample

@@ -137,8 +137,10 @@ sluice ai connect                        # register Sluice as MCP server in all 
 sluice mcp serve                         # the stdio MCP server itself (what the tools launch)
 ```
 
-Pre-built, signed installers (GitHub Releases, Homebrew, winget) ship with the first public beta —
-until then, building from source is the supported path. Try it instantly on a generated demo
+Tagged versions (`v*`) are built by the [Release workflow](.github/workflows/release.yml) for
+macOS arm64 / x86_64 and Windows x86_64 and attached to GitHub Releases with `SHA256SUMS` — unsigned
+previews for now (Gatekeeper / SmartScreen will warn); signing and notarization arrive with the
+first public beta, together with Homebrew / winget packages. Try it instantly on a generated demo
 repository:
 
 ```bash
