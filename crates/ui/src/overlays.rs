@@ -18,6 +18,7 @@ use crate::workbench::{Tab, Workbench, checkbox, section_label};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Overlay {
+    Rebase,
     Recent,
     AiConnect,
     Proposals,
@@ -122,6 +123,8 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
     ("待确认队列（AI 提议）", "⌘⇧P", "Ctrl+Shift+P"),
     ("打开仓库 / 最近仓库", "⌘O / ⌘⇧O", "Ctrl+O / Ctrl+Shift+O"),
+    ("交互式 rebase（从选中提交起）", "⌥⌘R", "Ctrl+Alt+R"),
+    ("交互式 rebase：调整顺序", "⌥↑ / ⌥↓", "Alt+↑ / Alt+↓"),
     ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
     ("提交", "⌘↩", "Ctrl+Enter"),
     ("全部暂存 / 取消暂存", "⌥⌘A / ⌥⌘U", "Ctrl+Alt+A / U"),
@@ -602,6 +605,7 @@ impl Workbench {
         let t = self.theme;
         let overlay = self.overlay.clone()?;
         let content: gpui::AnyElement = match &overlay {
+            Overlay::Rebase => self.render_rebase(cx).into_any_element(),
             Overlay::Recent => self.render_recent(cx).into_any_element(),
             Overlay::AiConnect => self.render_ai_connect(cx).into_any_element(),
             Overlay::Proposals => self.render_proposals(cx).into_any_element(),
@@ -1718,6 +1722,12 @@ impl Workbench {
                     MenuAct::ResetHard(c.id.clone()),
                     true,
                 ));
+                items.push((
+                    "arrows-down-up",
+                    "交互式 rebase（从此提交起）…",
+                    MenuAct::RebaseFrom(c.id.clone()),
+                    false,
+                ));
                 if is_head && self.repo.info.head.ahead > 0 {
                     items.push((
                         "arrow-line-up",
@@ -1910,6 +1920,7 @@ impl Workbench {
                     cx,
                 );
             }
+            MenuAct::RebaseFrom(id) => self.open_rebase_from(id, cx),
             MenuAct::FileHistory(p) => {
                 self.open_file_view(p, None, crate::file_view::FileViewMode::History, cx)
             }
@@ -2015,6 +2026,7 @@ enum MenuAct {
     },
     FileHistory(String),
     Blame(String, Option<String>),
+    RebaseFrom(Oid),
 }
 
 #[allow(dead_code)]

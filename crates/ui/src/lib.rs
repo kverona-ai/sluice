@@ -12,6 +12,7 @@ pub mod icons;
 pub mod log;
 pub mod overlays;
 pub mod proposals;
+pub mod rebase;
 pub mod recent;
 pub mod theme;
 pub mod workbench;
@@ -81,6 +82,10 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-shift-o", workbench::OpenRecent, ctx),
         KeyBinding::new("ctrl-shift-o", workbench::OpenRecent, ctx),
         KeyBinding::new("enter", workbench::ProposalAccept, nav),
+        KeyBinding::new("alt-up", workbench::RebaseMoveUp, nav),
+        KeyBinding::new("cmd-alt-r", workbench::RebaseFromSelection, ctx),
+        KeyBinding::new("ctrl-alt-r", workbench::RebaseFromSelection, ctx),
+        KeyBinding::new("alt-down", workbench::RebaseMoveDown, nav),
         KeyBinding::new("delete", workbench::ProposalReject, nav),
         KeyBinding::new("backspace", workbench::ProposalReject, nav),
         KeyBinding::new("ctrl-shift-p", workbench::OpenProposals, ctx),

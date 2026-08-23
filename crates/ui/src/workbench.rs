@@ -61,6 +61,9 @@ actions!(
         OpenProposals,
         OpenRepository,
         OpenRecent,
+        RebaseMoveUp,
+        RebaseMoveDown,
+        RebaseFromSelection,
         ProposalAccept,
         ProposalReject,
         StageAll,
@@ -165,6 +168,8 @@ pub struct Workbench {
     pub ai_busy_connect: bool,
     pub proposals: Vec<crate::proposals::PendingProposal>,
     pub recent: Vec<crate::recent::RecentRepo>,
+    pub rebase: Option<crate::rebase::RebaseDraft>,
+    pub rebase_msg: Entity<InputState>,
     pub provenance_cache: Option<(Oid, Vec<sluice_bridge::provenance::SessionMatch>)>,
     pub pending_askpass_prompt: Option<(String, std::sync::mpsc::Sender<Option<String>>)>,
     pub askpass_input: Entity<InputState>,
@@ -193,6 +198,19 @@ impl Workbench {
         let branch_filter = cx.new(|cx| InputState::new(window, cx).placeholder("搜索分支 / 标签"));
         let new_branch_name = cx.new(|cx| InputState::new(window, cx).placeholder("feat/my-branch"));
         let stash_msg = cx.new(|cx| InputState::new(window, cx).placeholder("stash 说明（可选）"));
+        let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder("新的提交信息"));
+        cx.subscribe(&rebase_msg, |this, _, ev: &InputEvent, cx| {
+            if matches!(ev, InputEvent::Change) {
+                let text = this.rebase_msg.read(cx).value().to_string();
+                if let Some(d) = this.rebase.as_mut()
+                    && let Some(it) = d.items.get_mut(d.selected)
+                {
+                    it.message = if text.trim().is_empty() { None } else { Some(text) };
+                }
+                cx.notify();
+            }
+        })
+        .detach();
         let askpass_input = cx.new(|cx| {
             InputState::new(window, cx)
                 .masked(true)
@@ -278,6 +296,8 @@ impl Workbench {
             ai_busy_connect: false,
             proposals: Vec::new(),
             recent: Vec::new(),
+            rebase: None,
+            rebase_msg,
             provenance_cache: None,
             pending_askpass_prompt: None,
             askpass_input,
@@ -527,6 +547,13 @@ impl Workbench {
     /// Record an app-level note in the Console (not a git command).
     pub fn console_note(&mut self, what: &str, detail: &str) {
         self.repo.console.note(what, detail);
+    }
+
+    /// Oid of the commit currently selected in the Log (None when nothing/empty).
+    pub fn selected_commit_id(&self) -> Option<Oid> {
+        let log = self.log.as_ref()?;
+        let ix = *self.visible.get(self.selected)?;
+        log.commits.get(ix).map(|c| c.id.clone())
     }
 
     /// Keyboard entry for file history / blame: acts on the file currently open or
@@ -1155,8 +1182,27 @@ impl Render for Workbench {
         div()
             .key_context("Workbench")
             .track_focus(&self.focus)
-            .on_action(cx.listener(|this, _: &MoveUp, _, cx| this.move_by(-1, cx)))
-            .on_action(cx.listener(|this, _: &MoveDown, _, cx| this.move_by(1, cx)))
+            .on_action(cx.listener(|this, _: &MoveUp, _, cx| {
+                if this.overlay == Some(crate::overlays::Overlay::Rebase) {
+                    this.rebase_move_selection(-1, cx)
+                } else {
+                    this.move_by(-1, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &MoveDown, _, cx| {
+                if this.overlay == Some(crate::overlays::Overlay::Rebase) {
+                    this.rebase_move_selection(1, cx)
+                } else {
+                    this.move_by(1, cx)
+                }
+            }))
+            .on_action(cx.listener(|this, _: &RebaseMoveUp, _, cx| this.rebase_reorder(-1, cx)))
+            .on_action(cx.listener(|this, _: &RebaseMoveDown, _, cx| this.rebase_reorder(1, cx)))
+            .on_action(cx.listener(|this, _: &RebaseFromSelection, _, cx| {
+                if let Some(id) = this.selected_commit_id() {
+                    this.open_rebase_from(id, cx);
+                }
+            }))
             .on_action(cx.listener(|this, _: &PageUp, _, cx| this.move_by(-20, cx)))
             .on_action(cx.listener(|this, _: &PageDown, _, cx| this.move_by(20, cx)))
             .on_action(cx.listener(|this, _: &SelectFirst, _, cx| this.select(0, cx)))
@@ -1188,6 +1234,8 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &ProposalAccept, window, cx| {
                 if this.overlay == Some(crate::overlays::Overlay::Proposals) {
                     this.decide_proposal(0, true, cx);
+                } else if this.overlay == Some(crate::overlays::Overlay::Rebase) {
+                    this.rebase_start(cx);
                 } else if this.overlay == Some(crate::overlays::Overlay::Recent) {
                     let current = this.repo.cli.as_ref().map(|c| c.workdir().to_path_buf());
                     if let Some(r) = this
@@ -1232,7 +1280,13 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &FocusCommit, window, cx| this.focus_commit(window, cx)))
             .on_action(cx.listener(|this, _: &StageAll, _, cx| this.stage_all(cx)))
             .on_action(cx.listener(|this, _: &UnstageAll, _, cx| this.unstage_all(cx)))
-            .on_action(cx.listener(|this, _: &ToggleSelected, _, cx| this.toggle_selected_work_file(cx)))
+            .on_action(cx.listener(|this, _: &ToggleSelected, _, cx| {
+                if this.overlay == Some(crate::overlays::Overlay::Rebase) {
+                    this.rebase_cycle_action(cx)
+                } else {
+                    this.toggle_selected_work_file(cx)
+                }
+            }))
             .size_full()
             .relative()
             .flex()

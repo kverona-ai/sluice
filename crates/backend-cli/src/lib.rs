@@ -678,6 +678,65 @@ impl GitCli {
         Ok(parse_blame_porcelain(&out.stdout_str()))
     }
 
+    // ----- interactive rebase (M3, 05 §6) ---------------------------------
+
+    /// Commits that `git rebase -i <base>` would replay, oldest first: (sha, subject).
+    pub fn rebase_range(&self, base: Option<&str>) -> Result<Vec<(String, String)>> {
+        let range = base
+            .map(|b| format!("{b}..HEAD"))
+            .unwrap_or_else(|| "HEAD".to_string());
+        let mut args = vec!["log", "--reverse", "--first-parent", "--format=%H%x1f%s"];
+        if base.is_none() {
+            args.push("--root");
+        }
+        args.push(&range);
+        let out = self.expect_ok(self.run_read(&args)?, "git log (rebase range)")?;
+        Ok(out
+            .stdout_str()
+            .lines()
+            .filter_map(|l| l.split_once('\x1f').map(|(a, b)| (a.to_string(), b.to_string())))
+            .collect())
+    }
+
+    /// Run `git rebase -i` non-interactively: `sluice seq-editor` rewrites the todo
+    /// list from `plan_path`, `sluice editor` supplies reworded messages.
+    pub fn rebase_interactive(
+        &self,
+        base: Option<&str>,
+        helper_exe: &Path,
+        plan_path: &Path,
+    ) -> Result<CliOutput> {
+        let exe = helper_exe.to_string_lossy().to_string();
+        let q = |s: &str| {
+            if s.contains(' ') {
+                format!("\"{s}\"")
+            } else {
+                s.to_string()
+            }
+        };
+        let seq = format!("{} seq-editor", q(&exe));
+        let ed = format!("{} editor", q(&exe));
+        let mut cmd = self.command(&["rebase", "-i", base.unwrap_or("--root")]);
+        cmd.env("GIT_SEQUENCE_EDITOR", &seq)
+            .env("GIT_EDITOR", &ed)
+            .env("SLUICE_REBASE_PLAN", plan_path);
+        let started = Instant::now();
+        let output = cmd.output().context("running git rebase -i")?;
+        let out = CliOutput {
+            status: output.status.code().unwrap_or(-1),
+            stdout: output.stdout,
+            stderr: String::from_utf8_lossy(&output.stderr).trim().to_string(),
+        };
+        self.log(
+            ConsoleKind::Write,
+            &["rebase", "-i", base.unwrap_or("--root")],
+            started,
+            &out,
+            "interactive rebase (plan-driven)".into(),
+        );
+        self.expect_ok(out, "git rebase -i")
+    }
+
     /// Undo the last (unpushed) commit keeping its changes staged (05 §5).
     pub fn undo_last_commit(&self) -> Result<()> {
         self.expect_ok(self.run(&["reset", "--soft", "HEAD~1"])?, "git reset --soft")

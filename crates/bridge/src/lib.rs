@@ -9,3 +9,4 @@ pub mod hooks;
 pub mod ipc;
 pub mod mcp;
 pub mod provenance;
+pub mod rebase;

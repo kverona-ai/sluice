@@ -147,8 +147,14 @@ fn main() -> Result<()> {
                 None => std::process::exit(1),
             }
         }
-        Some(Command::Editor { .. }) => not_yet("sluice editor", "M3 — 05 §6"),
-        Some(Command::SeqEditor { .. }) => not_yet("sluice seq-editor", "M3 — 05 §6"),
+        Some(Command::Editor { file }) => match file {
+            Some(f) => sluice_bridge::rebase::run_editor(&f),
+            None => Ok(()),
+        },
+        Some(Command::SeqEditor { file }) => match file {
+            Some(f) => sluice_bridge::rebase::run_seq_editor(&f),
+            None => anyhow::bail!("seq-editor needs the todo file path"),
+        },
         Some(Command::Diagnostics) => {
             let path = resolve_path(cli.path).unwrap_or_else(|_| PathBuf::from("."));
             let mut out = String::new();
@@ -247,11 +253,6 @@ fn run_ai(cmd: AiCommand) -> Result<()> {
             Ok(())
         }
     }
-}
-
-fn not_yet(what: &str, when: &str) -> Result<()> {
-    eprintln!("{what}: not implemented yet ({when}). See sluice-doc requirements v0.3.");
-    std::process::exit(2);
 }
 
 fn resolve_path(path: Option<PathBuf>) -> Result<PathBuf> {
