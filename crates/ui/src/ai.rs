@@ -1,6 +1,21 @@
-//! Reverse AI calls (03 §5): reuse the user's logged-in AI CLI in headless
-//! mode to draft a commit message — no API key, no configuration. The staged
-//! diff is sent to the tool; the UI asks for consent the first time (05 §5).
+//! Reverse AI calls: reuse whatever AI CLI the user already has and is logged
+//! into, in headless mode, to draft a commit message — no API key, no
+//! configuration. The staged diff is sent to the tool on the user's own
+//! account (a first-use notice is shown in the UI).
+//!
+//! Tool table verified against each CLI's own docs (2026-08). Three input
+//! modes cover the ecosystem:
+//! - `Stdin`: the whole input (instruction + diff) is piped to stdin
+//! - `ArgWithStdin`: the instruction rides the prompt flag, the diff is piped
+//!   (the documented pattern for the Gemini-CLI family and Grok Build)
+//! - `PromptArg`: everything goes into one argument — for tools whose stdin is
+//!   ignored or unspecified when a prompt flag is present (Copilot CLI is
+//!   documented as mutually exclusive). Capped well under the Windows 32 KB
+//!   command-line limit.
+//!
+//! Aider is deliberately NOT in this table: its default `--auto-commits` can
+//! perform a real `git commit` as a side effect, which violates "AI proposes,
+//! humans decide".
 
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -8,75 +23,212 @@ use std::time::Duration;
 use anyhow::{Context as _, Result, bail};
 use sluice_backend_cli::env::{find_executable, login_path};
 
-/// Detect an installed AI CLI: (id, display name). Fixed preference order (03 §5).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InputMode {
+    Stdin,
+    ArgWithStdin,
+    PromptArg,
+}
+
+pub struct ToolSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub bin: &'static str,
+    pub args: &'static [&'static str],
+    pub mode: InputMode,
+}
+
+/// Detection priority: the four deeply-integrated tools first, then the rest.
+pub const TOOLS: &[ToolSpec] = &[
+    ToolSpec {
+        id: "claude-code",
+        name: "Claude Code",
+        bin: "claude",
+        args: &["-p", "--output-format", "text"],
+        mode: InputMode::Stdin,
+    },
+    ToolSpec {
+        id: "codex",
+        name: "Codex CLI",
+        bin: "codex",
+        args: &["exec", "--skip-git-repo-check", "-"],
+        mode: InputMode::Stdin,
+    },
+    // `git diff | grok -p "..."` is the documented headless pattern.
+    ToolSpec {
+        id: "grok-build",
+        name: "Grok Build",
+        bin: "grok",
+        args: &["--no-auto-update", "-p"],
+        mode: InputMode::ArgWithStdin,
+    },
+    // Developer preview; headless profile syntax may still change upstream.
+    ToolSpec {
+        id: "dsh",
+        name: "DeepSeek Harness",
+        bin: "dsh",
+        args: &["--profile", "headless"],
+        mode: InputMode::Stdin,
+    },
+    ToolSpec {
+        id: "gemini",
+        name: "Gemini CLI",
+        bin: "gemini",
+        args: &["-p"],
+        mode: InputMode::ArgWithStdin,
+    },
+    // Both the current Kimi Code and the legacy kimi-cli accept `--print` with the prompt on stdin.
+    ToolSpec {
+        id: "kimi",
+        name: "Kimi Code",
+        bin: "kimi",
+        args: &["--print"],
+        mode: InputMode::Stdin,
+    },
+    // Official fork of Gemini CLI — same flag family.
+    ToolSpec {
+        id: "qwen",
+        name: "Qwen Code",
+        bin: "qwen",
+        args: &["-p"],
+        mode: InputMode::ArgWithStdin,
+    },
+    // Agentic runner; prompt must be the `run` argument.
+    ToolSpec {
+        id: "opencode",
+        name: "opencode",
+        bin: "opencode",
+        args: &["run"],
+        mode: InputMode::PromptArg,
+    },
+    // Copilot CLI documents stdin and --prompt as mutually exclusive.
+    ToolSpec {
+        id: "copilot",
+        name: "Copilot CLI",
+        bin: "copilot",
+        args: &["-s", "--no-ask-user", "-p"],
+        mode: InputMode::PromptArg,
+    },
+    // Z.ai ships no official standalone headless CLI; this matches the community
+    // wrapper's flags. GLM users more commonly route through claude/codex with a
+    // custom base URL, which the entries above already cover.
+    ToolSpec {
+        id: "zcode",
+        name: "Z Code",
+        bin: "zcode",
+        args: &["--print", "--prompt"],
+        mode: InputMode::PromptArg,
+    },
+];
+
+/// First installed tool in priority order: (id, display name).
 pub fn detect_tool() -> Option<(String, String)> {
-    for (bin, id, name) in [
-        ("claude", "claude-code", "Claude Code"),
-        ("codex", "codex", "Codex CLI"),
-        ("grok", "grok-build", "Grok Build"),
-        ("dsh", "dsh", "DeepSeek Harness"),
-    ] {
-        if find_executable(bin).is_some() {
-            return Some((id.to_string(), name.to_string()));
-        }
-    }
-    None
+    TOOLS
+        .iter()
+        .find(|t| find_executable(t.bin).is_some())
+        .map(|t| (t.id.to_string(), t.name.to_string()))
+}
+
+/// All installed tools (for a future provider picker in Settings).
+pub fn detect_tools() -> Vec<(String, String)> {
+    TOOLS
+        .iter()
+        .filter(|t| find_executable(t.bin).is_some())
+        .map(|t| (t.id.to_string(), t.name.to_string()))
+        .collect()
 }
 
 const PROMPT_ZH: &str = "你是资深工程师。根据下面的 staged diff 与仓库最近提交信息的风格，写一条 git 提交信息：\
 第一行 ≤ 72 字符的 subject（遵循 Conventional Commits，如 feat/fix/docs/refactor），空一行后写简短 body（要点列表，说明为什么）。\
-只输出提交信息本身，不要解释，不要代码块。";
+只输出提交信息本身，不要解释，不要代码块，不要执行任何命令。";
 const PROMPT_EN: &str = "You are a senior engineer. Write a git commit message for the staged diff below, matching the style of the recent subjects: \
 a subject line ≤ 72 chars (Conventional Commits: feat/fix/docs/refactor…), a blank line, then a short bullet body saying why. \
-Output only the commit message, no explanation, no code fences.";
+Output only the commit message. No explanation, no code fences, and do not run any commands.";
 
-/// Blocking: run the tool headless with the diff on stdin. Called on the background executor.
-pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &[String]) -> Result<String> {
+/// Diff budget for stdin-carried payloads (05 §5).
+const MAX_DIFF_BYTES: usize = 64 * 1024;
+/// Budget when everything must fit into a single argv entry (Windows caps the
+/// whole command line at ~32 KB).
+const MAX_ARG_BYTES: usize = 24 * 1024;
+
+fn truncate_at_boundary(s: &str, max: usize) -> &str {
+    if s.len() <= max {
+        return s;
+    }
+    let mut end = max;
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
+fn build_instruction(recent_subjects: &[String]) -> String {
     let zh = recent_subjects
         .iter()
         .filter(|s| s.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c)))
         .count()
         * 10
         >= recent_subjects.len().max(1) * 7;
-    let prompt = if zh { PROMPT_ZH } else { PROMPT_EN };
-    let mut input = String::new();
-    input.push_str(prompt);
-    input.push_str("\n\nRecent subjects:\n");
+    let mut out = String::from(if zh { PROMPT_ZH } else { PROMPT_EN });
+    out.push_str("\n\nRecent subjects:\n");
     for s in recent_subjects.iter().take(30) {
-        input.push_str("- ");
-        input.push_str(s);
-        input.push('\n');
+        out.push_str("- ");
+        out.push_str(s);
+        out.push('\n');
     }
-    input.push_str("\nStaged diff:\n");
-    // 64KB cap (05 §5)
-    let diff = if staged_diff.len() > 64 * 1024 {
-        format!("{}\n… (diff truncated at 64KB)\n", &staged_diff[..64 * 1024])
-    } else {
-        staged_diff.to_string()
-    };
-    input.push_str(&diff);
+    out
+}
 
-    let (bin, args): (&str, Vec<&str>) = match tool_id {
-        "claude-code" => ("claude", vec!["-p", "--output-format", "text"]),
-        "codex" => ("codex", vec!["exec", "--skip-git-repo-check", "-"]),
-        "grok-build" => ("grok", vec!["-p"]),
-        "dsh" => ("dsh", vec!["--profile", "headless"]),
-        other => bail!("unknown AI tool {other}"),
+/// Blocking: run the tool headless. Called on the background executor.
+pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &[String]) -> Result<String> {
+    let spec = TOOLS
+        .iter()
+        .find(|t| t.id == tool_id)
+        .ok_or_else(|| anyhow::anyhow!("unknown AI tool {tool_id}"))?;
+    let instruction = build_instruction(recent_subjects);
+    let diff_budget = if spec.mode == InputMode::PromptArg {
+        MAX_ARG_BYTES.saturating_sub(instruction.len() + 64)
+    } else {
+        MAX_DIFF_BYTES
     };
-    let exe = find_executable(bin).with_context(|| format!("{bin} not found on PATH"))?;
-    let mut child = Command::new(exe)
-        .args(&args)
-        .env("PATH", login_path())
-        .stdin(Stdio::piped())
+    let diff = truncate_at_boundary(staged_diff, diff_budget);
+    let truncated = diff.len() < staged_diff.len();
+    let diff_block = format!(
+        "\nStaged diff:\n{diff}{}",
+        if truncated {
+            "\n… (diff truncated)\n"
+        } else {
+            "\n"
+        }
+    );
+
+    let exe = find_executable(spec.bin).with_context(|| format!("{} not found on PATH", spec.bin))?;
+    let mut cmd = Command::new(exe);
+    cmd.env("PATH", login_path())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .with_context(|| format!("spawning {bin}"))?;
-    {
+        .stderr(Stdio::piped());
+    let stdin_payload: Option<String> = match spec.mode {
+        InputMode::Stdin => {
+            cmd.args(spec.args).stdin(Stdio::piped());
+            Some(format!("{instruction}{diff_block}"))
+        }
+        InputMode::ArgWithStdin => {
+            // instruction as the prompt-flag value, diff piped in
+            cmd.args(spec.args).arg(&instruction).stdin(Stdio::piped());
+            Some(diff_block)
+        }
+        InputMode::PromptArg => {
+            cmd.args(spec.args)
+                .arg(format!("{instruction}{diff_block}"))
+                .stdin(Stdio::null());
+            None
+        }
+    };
+    let mut child = cmd.spawn().with_context(|| format!("spawning {}", spec.bin))?;
+    if let Some(payload) = stdin_payload {
         use std::io::Write;
         let mut stdin = child.stdin.take().expect("piped stdin");
-        // For claude -p the prompt is the stdin when no positional prompt is given.
-        stdin.write_all(input.as_bytes())?;
+        stdin.write_all(payload.as_bytes())?;
     }
     let deadline = std::time::Instant::now() + Duration::from_secs(90);
     loop {
@@ -85,14 +237,15 @@ pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &
         }
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
-            bail!("{bin} timed out after 90s");
+            bail!("{} timed out after 90s", spec.bin);
         }
         std::thread::sleep(Duration::from_millis(100));
     }
     let out = child.wait_with_output()?;
     if !out.status.success() {
         bail!(
-            "{bin} exited with {}: {}",
+            "{} exited with {}: {}",
+            spec.bin,
             out.status,
             String::from_utf8_lossy(&out.stderr).trim()
         );
@@ -104,7 +257,7 @@ pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &
         .trim()
         .to_string();
     if text.is_empty() {
-        bail!("{bin} returned an empty message");
+        bail!("{} returned an empty message", spec.bin);
     }
     Ok(text)
 }

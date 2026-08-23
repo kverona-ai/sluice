@@ -30,6 +30,9 @@ fn make_repo() -> Option<PathBuf> {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).ok()?;
     assert!(git(&dir, &["init", "-q", "-b", "main"]));
+    // Deterministic across platforms: the Windows runner defaults to core.autocrlf=true,
+    // which would materialize merged files with CRLF in the worktree.
+    assert!(git(&dir, &["config", "core.autocrlf", "false"]));
     std::fs::write(dir.join("a.txt"), "one\ntwo\n").ok()?;
     assert!(git(&dir, &["add", "-A"]));
     assert!(git(

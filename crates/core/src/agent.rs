@@ -9,6 +9,11 @@ pub enum Agent {
     CodexCli,
     GrokBuild,
     DeepSeekHarness,
+    Gemini,
+    KimiCode,
+    QwenCode,
+    ZCode,
+    Copilot,
     OtherAi,
 }
 
@@ -21,6 +26,11 @@ impl Agent {
             Agent::CodexCli => "X",
             Agent::GrokBuild => "G",
             Agent::DeepSeekHarness => "D",
+            Agent::Gemini => "Ge",
+            Agent::KimiCode => "K",
+            Agent::QwenCode => "Q",
+            Agent::ZCode => "Z",
+            Agent::Copilot => "Co",
             Agent::OtherAi => "AI",
         }
     }
@@ -32,6 +42,11 @@ impl Agent {
             Agent::CodexCli => "Codex CLI",
             Agent::GrokBuild => "Grok Build",
             Agent::DeepSeekHarness => "DeepSeek Harness",
+            Agent::Gemini => "Gemini CLI",
+            Agent::KimiCode => "Kimi Code",
+            Agent::QwenCode => "Qwen Code",
+            Agent::ZCode => "Z Code",
+            Agent::Copilot => "Copilot CLI",
             Agent::OtherAi => "AI agent",
         }
     }
@@ -50,6 +65,11 @@ impl Agent {
                 "codex" | "codex-cli" => Agent::CodexCli,
                 "grok" | "grok-build" => Agent::GrokBuild,
                 "dsh" | "deepseek" | "deepseek-harness" => Agent::DeepSeekHarness,
+                "gemini" | "gemini-cli" => Agent::Gemini,
+                "kimi" | "kimi-code" => Agent::KimiCode,
+                "qwen" | "qwen-code" => Agent::QwenCode,
+                "zcode" | "z-code" | "glm" => Agent::ZCode,
+                "copilot" | "copilot-cli" => Agent::Copilot,
                 "human" => Agent::Human,
                 _ => Agent::OtherAi,
             };
@@ -69,7 +89,21 @@ impl Agent {
             Agent::GrokBuild
         } else if hay.contains("deepseek") || hay.contains("dsh") {
             Agent::DeepSeekHarness
-        } else if hay.contains("[bot]") || hay.contains("copilot") || hay.contains("gemini") {
+        } else if hay.contains("gemini") {
+            Agent::Gemini
+        } else if hay.contains("kimi") || hay.contains("moonshot") {
+            Agent::KimiCode
+        } else if hay.contains("qwen") || hay.contains("tongyi") {
+            Agent::QwenCode
+        } else if hay.contains("zcode")
+            || hay.contains("z.ai")
+            || hay.contains("zhipu")
+            || hay.contains("glm")
+        {
+            Agent::ZCode
+        } else if hay.contains("copilot") {
+            Agent::Copilot
+        } else if hay.contains("[bot]") || hay.contains(" ai ") || hay.contains("agent@") {
             Agent::OtherAi
         } else {
             Agent::Human

@@ -129,6 +129,11 @@ impl Theme {
             Agent::CodexCli => self.cyan,
             Agent::GrokBuild => self.yellow,
             Agent::DeepSeekHarness => self.cyan,
+            Agent::Gemini => self.cyan,
+            Agent::KimiCode => self.mag,
+            Agent::QwenCode => self.yellow,
+            Agent::ZCode => self.cyan,
+            Agent::Copilot => self.muted,
             Agent::OtherAi => self.muted,
         }
     }

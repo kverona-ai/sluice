@@ -6,6 +6,18 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- AI commit drafts now support ten CLIs with per-tool headless invocation (stdin, prompt-arg +
+  stdin, or single-arg modes): Claude Code, Codex CLI, Grok Build, DeepSeek Harness, Gemini CLI,
+  Kimi Code, Qwen Code, opencode, GitHub Copilot CLI, Z Code (community wrapper). Aider is
+  intentionally excluded (side-effectful by default). Agent badges/provenance recognize the new
+  tools.
+- Bilingual README (`README.md` English / `README.zh-CN.md` 中文), CONTRIBUTING, SECURITY,
+  Code of Conduct, issue/PR templates, star-history chart.
+
+### Fixed
+- Windows CI: the read-path integration test now pins `core.autocrlf=false` in its fixture
+  (the runner default materialized merged files with CRLF).
+
 - M1 / M2: file watcher with debounced refresh; live search (text / regex / case), author & date
   filters, AI-only, sort toggle; per-file diffs (side-by-side / unified, word-level highlights,
   whitespace, context, hunk navigation); Local Changes tree with file / hunk / line staging,
