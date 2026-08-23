@@ -17,13 +17,18 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 
 </div>
 
-<p align="center">
-  <img src="docs/assets/screenshot-log.png" alt="日志 —— 提交图、agent 徽章、实时过滤、带会话溯源的提交详情" width="900">
-</p>
-<p align="center">
-  <img src="docs/assets/screenshot-changes.png" alt="本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与行级暂存" width="445">
-  <img src="docs/assets/screenshot-dark.png" alt="深色主题" width="445">
-</p>
+<p align="center"><img src="docs/assets/screenshot-log.png" alt="日志 —— 稳定泳道的提交图、agent 徽章、实时过滤，以及带会话溯源的提交详情" width="1000"></p>
+<p align="center"><sub>日志 —— 稳定泳道的提交图、agent 徽章、实时过滤，以及带会话溯源的提交详情</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-changes.png" alt="本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与块级 / 行级暂存" width="1000"></p>
+<p align="center"><sub>本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与块级 / 行级暂存</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿" width="1000"></p>
+<p align="center"><sub>PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-dark.png" alt="深色主题" width="1000"></p>
+<p align="center"><sub>深色主题</sub></p>
+
 
 ---
 

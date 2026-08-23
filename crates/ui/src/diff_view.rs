@@ -408,7 +408,12 @@ impl Workbench {
             .into_any_element()
     }
 
-    fn render_diff_rows(&mut self, work: bool, dv: &DiffView, cx: &mut Context<Self>) -> impl IntoElement {
+    pub(crate) fn render_diff_rows(
+        &mut self,
+        work: bool,
+        dv: &DiffView,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let t = self.theme;
         let sbs = self.side_by_side;
         let rows: Vec<DiffRow> = dv.rows(sbs).to_vec();

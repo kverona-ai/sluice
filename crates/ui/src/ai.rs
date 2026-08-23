@@ -181,20 +181,26 @@ fn build_instruction(recent_subjects: &[String]) -> String {
 
 /// Blocking: run the tool headless. Called on the background executor.
 pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &[String]) -> Result<String> {
+    let instruction = build_instruction(recent_subjects);
+    run_tool(tool_id, &instruction, staged_diff)
+}
+
+/// Run a provider headless with `instruction` + a diff-like `payload` using the tool's
+/// input mode; returns the trimmed text output.
+fn run_tool(tool_id: &str, instruction: &str, payload: &str) -> Result<String> {
     let spec = TOOLS
         .iter()
         .find(|t| t.id == tool_id)
         .ok_or_else(|| anyhow::anyhow!("unknown AI tool {tool_id}"))?;
-    let instruction = build_instruction(recent_subjects);
     let diff_budget = if spec.mode == InputMode::PromptArg {
         MAX_ARG_BYTES.saturating_sub(instruction.len() + 64)
     } else {
         MAX_DIFF_BYTES
     };
-    let diff = truncate_at_boundary(staged_diff, diff_budget);
-    let truncated = diff.len() < staged_diff.len();
+    let diff = truncate_at_boundary(payload, diff_budget);
+    let truncated = diff.len() < payload.len();
     let diff_block = format!(
-        "\nStaged diff:\n{diff}{}",
+        "\nDiff:\n{diff}{}",
         if truncated {
             "\n… (diff truncated)\n"
         } else {
@@ -213,8 +219,7 @@ pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &
             Some(format!("{instruction}{diff_block}"))
         }
         InputMode::ArgWithStdin => {
-            // instruction as the prompt-flag value, diff piped in
-            cmd.args(spec.args).arg(&instruction).stdin(Stdio::piped());
+            cmd.args(spec.args).arg(instruction).stdin(Stdio::piped());
             Some(diff_block)
         }
         InputMode::PromptArg => {
@@ -230,14 +235,14 @@ pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &
         let mut stdin = child.stdin.take().expect("piped stdin");
         stdin.write_all(payload.as_bytes())?;
     }
-    let deadline = std::time::Instant::now() + Duration::from_secs(90);
+    let deadline = std::time::Instant::now() + Duration::from_secs(120);
     loop {
         if child.try_wait()?.is_some() {
             break;
         }
         if std::time::Instant::now() > deadline {
             let _ = child.kill();
-            bail!("{} timed out after 90s", spec.bin);
+            bail!("{} timed out after 120s", spec.bin);
         }
         std::thread::sleep(Duration::from_millis(100));
     }
@@ -260,4 +265,19 @@ pub fn draft_commit_message(tool_id: &str, staged_diff: &str, recent_subjects: &
         bail!("{} returned an empty message", spec.bin);
     }
     Ok(text)
+}
+
+const REVIEW_PROMPT_ZH: &str = "你是资深代码评审者。下面是一个 Pull Request 的标题与完整 diff。请写一条简明的评审意见（Markdown）：先一句总体判断，再按严重程度列出最多 8 条具体问题（文件:行、风险、建议），最后给出是否可合并的建议。只输出评审文本，不要执行任何命令。";
+const REVIEW_PROMPT_EN: &str = "You are a senior code reviewer. Below are a pull request title and its full diff. Write a concise review (Markdown): one-line overall verdict, then up to 8 concrete findings ordered by severity (file:line, risk, suggestion), then a merge recommendation. Output only the review text; do not run any commands.";
+
+/// Draft a PR review comment from a patch (same provider table / input modes as commit drafts).
+pub fn draft_review(tool_id: &str, title: &str, patch: &str) -> Result<String> {
+    let zh = title.chars().any(|c| ('\u{4e00}'..='\u{9fff}').contains(&c))
+        || crate::i18n::lang() == crate::i18n::Lang::Zh;
+    let instruction = format!(
+        "{}\n\nTitle: {}\n",
+        if zh { REVIEW_PROMPT_ZH } else { REVIEW_PROMPT_EN },
+        title
+    );
+    run_tool(tool_id, &instruction, patch)
 }

@@ -17,6 +17,7 @@ pub mod keymap;
 pub mod log;
 pub mod overlays;
 pub mod proposals;
+pub mod pulls;
 pub mod rebase;
 pub mod recent;
 pub mod theme;

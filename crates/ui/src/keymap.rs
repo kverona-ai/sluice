@@ -91,6 +91,12 @@ pub const IDEA: &[Entry] = &[
         nav: false,
     },
     Entry {
+        action: "ShowPulls",
+        label: "PR / MR 评审",
+        keys: &["cmd-8", "alt-8"],
+        nav: false,
+    },
+    Entry {
         action: "ShowConsole",
         label: "Console",
         keys: &["cmd-6", "alt-6"],
@@ -367,6 +373,7 @@ fn make(action: &str, keys: &str, nav: bool) -> Option<KeyBinding> {
         "ShowLog" => KeyBinding::new(keys, crate::workbench::ShowLog, ctx),
         "ShowChanges" => KeyBinding::new(keys, crate::workbench::ShowChanges, ctx),
         "ShowConsole" => KeyBinding::new(keys, crate::workbench::ShowConsole, ctx),
+        "ShowPulls" => KeyBinding::new(keys, crate::workbench::ShowPulls, ctx),
         "Refresh" => KeyBinding::new(keys, crate::workbench::Refresh, ctx),
         "FocusSearch" => KeyBinding::new(keys, crate::workbench::FocusSearch, ctx),
         "FocusCommit" => KeyBinding::new(keys, crate::workbench::FocusCommit, ctx),

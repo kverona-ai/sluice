@@ -56,6 +56,9 @@ pub enum ConfirmAction {
     RemoveWorktree {
         path: std::path::PathBuf,
     },
+    MergePull {
+        number: u64,
+    },
 }
 
 impl ConfirmAction {
@@ -67,6 +70,7 @@ impl ConfirmAction {
             ConfirmAction::DropStash { id } => tf!("删除 {}？", id),
             ConfirmAction::DeleteSnapshot { .. } => tr("删除该快照？").to_string(),
             ConfirmAction::RemoveWorktree { path } => tf!("删除 worktree {}？", path.display()),
+            ConfirmAction::MergePull { number } => tf!("Squash 合并 #{}？", number),
         }
     }
     fn body(&self) -> String {
@@ -91,6 +95,9 @@ impl ConfirmAction {
             ConfirmAction::DeleteSnapshot { .. } => tr("仅删除快照引用；对象在 git gc 之前仍存在。").into(),
             ConfirmAction::RemoveWorktree { .. } => {
                 tr("等价 git worktree remove --force：目录会被删除，分支本身保留。").into()
+            }
+            ConfirmAction::MergePull { .. } => {
+                tr("经 gh / glab 以你的账号合并并删除源分支；不可撤销。").into()
             }
         }
     }
@@ -534,6 +541,13 @@ impl Workbench {
                 );
                 self.overlay = Some(Overlay::Stash);
                 self.refresh_stash_list(cx);
+            }
+            ConfirmAction::MergePull { number } => {
+                self.pull_action(
+                    tf!("合并 #{}", number),
+                    move |f, cwd| sluice_bridge::forge::merge(f, cwd, number, true),
+                    cx,
+                );
             }
             ConfirmAction::RemoveWorktree { path } => {
                 let shown = path.display().to_string();

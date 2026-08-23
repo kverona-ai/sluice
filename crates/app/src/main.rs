@@ -444,6 +444,7 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                             match shot_tab.as_str() {
                                 "changes" => w.set_tab(sluice_ui::workbench::Tab::Changes, cx),
                                 "console" => w.set_tab(sluice_ui::workbench::Tab::Console, cx),
+                                "pulls" => w.set_tab(sluice_ui::workbench::Tab::Pulls, cx),
                                 _ => {}
                             }
                             if shot_open {
@@ -456,6 +457,19 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                     cx.background_executor()
                         .timer(std::time::Duration::from_millis(1500))
                         .await;
+                    if let Some(n) = std::env::var("SLUICE_SCREENSHOT_PULL")
+                        .ok()
+                        .and_then(|v| v.parse::<u64>().ok())
+                    {
+                        let _ = handle.update(cx, |_root, window, cx| {
+                            let wb = cx.global::<ShotTarget>().0.clone();
+                            wb.update(cx, |w, cx| w.select_pull(n, cx));
+                            window.refresh();
+                        });
+                        cx.background_executor()
+                            .timer(std::time::Duration::from_millis(2500))
+                            .await;
+                    }
                     match shot::capture_own_window(&out) {
                         Ok(()) => eprintln!("screenshot written to {}", out.display()),
                         Err(e) => eprintln!("screenshot failed: {e:#}"),

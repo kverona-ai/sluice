@@ -6,6 +6,11 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **PR / MR review tab** (`⌘8`): open PRs from the logged-in `gh` / `glab` (GitHub / GitLab
+  detected from `origin`), details with checks / decision / discussion, PR head fetched locally
+  (`refs/pull/N/head` / `refs/merge-requests/N/head`) and diffed with Sluice's own viewer,
+  checkout / approve / request changes / comment / squash-merge, AI pre-review drafted into the
+  comment box (never auto-posted).
 - Self-screenshot mode (`SLUICE_SCREENSHOT=<png>`, macOS; `_TAB` / `_DARK` / `_OPEN` knobs)
   used for the README images and future visual checks.
 - **Syntax highlighting** in diffs via tree-sitter (Rust, JS/TS/TSX, Python, Go, JSON, TOML,

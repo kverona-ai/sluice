@@ -247,6 +247,28 @@ fn attach_syntax(d: &mut FileDiff, path: &str, old: &[u8], new: &[u8]) {
     }
 }
 
+/// Diff of one path between two arbitrary commits (PR review: merge-base .. head).
+pub fn diff_range_file(
+    reader: &dyn GitReader,
+    base: &Oid,
+    head: &Oid,
+    path: &str,
+    old_path: Option<&str>,
+    opts: &DiffOptions,
+) -> Result<FileDiff> {
+    let old = reader
+        .blob(&BlobRev::Commit(base.clone()), old_path.unwrap_or(path))?
+        .unwrap_or_default();
+    let new = reader
+        .blob(&BlobRev::Commit(head.clone()), path)?
+        .unwrap_or_default();
+    let mut d = diff_bytes(&old, &new, opts);
+    d.old_path = Some(old_path.unwrap_or(path).to_string());
+    d.new_path = Some(path.to_string());
+    attach_syntax(&mut d, path, &old, &new);
+    Ok(d)
+}
+
 /// Diff of a working-tree path: `staged` = index vs HEAD, otherwise worktree vs index.
 pub fn diff_work_file(
     reader: &dyn GitReader,

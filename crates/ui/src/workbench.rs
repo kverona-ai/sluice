@@ -40,6 +40,7 @@ actions!(
         ShowLog,
         ShowChanges,
         ShowConsole,
+        ShowPulls,
         Refresh,
         FocusSearch,
         Escape,
@@ -86,6 +87,7 @@ actions!(
 pub enum Tab {
     Changes,
     Log,
+    Pulls,
     Console,
 }
 
@@ -94,6 +96,7 @@ impl Tab {
         match self {
             Tab::Changes => "Local Changes",
             Tab::Log => "Log",
+            Tab::Pulls => "PR",
             Tab::Console => "Console",
         }
     }
@@ -188,6 +191,10 @@ pub struct Workbench {
     pub worktree_branch: Entity<InputState>,
     pub settings: crate::recent::Settings,
     pub update_available: Option<(String, String)>,
+    pub pulls: crate::pulls::PullState,
+    pub pull_diff: Option<DiffView>,
+    pub pull_comment: Entity<InputState>,
+    pub pulls_split: Entity<gpui_component::resizable::ResizableState>,
     pub log_split: Entity<gpui_component::resizable::ResizableState>,
     pub changes_split: Entity<gpui_component::resizable::ResizableState>,
     pub dock_split: Entity<gpui_component::resizable::ResizableState>,
@@ -244,6 +251,9 @@ impl Workbench {
         let log_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
         let changes_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
         let dock_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
+        let pulls_split = cx.new(|_| gpui_component::resizable::ResizableState::default());
+        let pull_comment =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("评审意见 / 评论（Markdown）")));
         let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder(tr("新的提交信息")));
         cx.subscribe(&rebase_msg, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
@@ -349,6 +359,10 @@ impl Workbench {
             worktree_branch,
             settings: settings.clone(),
             update_available: None,
+            pulls: Default::default(),
+            pull_diff: None,
+            pull_comment,
+            pulls_split,
             log_split,
             changes_split,
             dock_split,
@@ -974,6 +988,9 @@ impl Workbench {
     }
 
     pub fn set_tab(&mut self, tab: Tab, cx: &mut Context<Self>) {
+        if tab == Tab::Pulls {
+            self.ensure_pulls(cx);
+        }
         self.tab = tab;
         self.popup = None;
         cx.notify();
@@ -1013,6 +1030,11 @@ impl Workbench {
     }
 
     pub fn close_diff(&mut self, cx: &mut Context<Self>) {
+        if self.tab == Tab::Pulls && self.pull_diff.is_some() {
+            self.pull_diff = None;
+            cx.notify();
+            return;
+        }
         if self.conflict.is_some() {
             self.conflict = None;
             cx.notify();
@@ -1026,6 +1048,7 @@ impl Workbench {
         }
         match self.tab {
             Tab::Log => self.commit_diff = None,
+            Tab::Pulls => self.pull_diff = None,
             Tab::Changes => {
                 self.work_file = None;
                 self.work_diff = None;
@@ -1060,6 +1083,7 @@ impl Workbench {
         match self.tab {
             Tab::Log => self.commit_diff.as_mut(),
             Tab::Changes => self.work_diff.as_mut(),
+            Tab::Pulls => self.pull_diff.as_mut(),
             Tab::Console => None,
         }
     }
@@ -1083,7 +1107,7 @@ impl Workbench {
             .branch
             .clone()
             .unwrap_or_else(|| "detached HEAD".into());
-        let tabs = [Tab::Changes, Tab::Log, Tab::Console];
+        let tabs = [Tab::Changes, Tab::Log, Tab::Pulls, Tab::Console];
         let active = self.tab;
         let is_mac = cfg!(target_os = "macos");
         let pending = self.changes.as_ref().map(|c| c.status.entries.len()).unwrap_or(0);
@@ -1358,6 +1382,17 @@ impl Workbench {
             )
             .child(
                 item(
+                    "rail-pulls",
+                    "git-pull-request",
+                    "PR",
+                    "PR / MR 评审 ⌘8",
+                    tab == Tab::Pulls,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.set_tab(Tab::Pulls, cx))),
+            )
+            .child(
+                item(
                     "rail-branches",
                     "git-merge",
                     tr("分支"),
@@ -1501,6 +1536,7 @@ impl Render for Workbench {
         let body = match self.tab {
             Tab::Log => self.render_log(window, cx).into_any_element(),
             Tab::Changes => self.render_changes(window, cx).into_any_element(),
+            Tab::Pulls => self.render_pulls(window, cx).into_any_element(),
             Tab::Console => self.render_console(cx).into_any_element(),
         };
         div()
@@ -1547,6 +1583,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &ShowLog, _, cx| this.set_tab(Tab::Log, cx)))
             .on_action(cx.listener(|this, _: &ShowChanges, _, cx| this.set_tab(Tab::Changes, cx)))
             .on_action(cx.listener(|this, _: &ShowConsole, _, cx| this.set_tab(Tab::Console, cx)))
+            .on_action(cx.listener(|this, _: &ShowPulls, _, cx| this.set_tab(Tab::Pulls, cx)))
             .on_action(cx.listener(|this, _: &Refresh, _, cx| this.refresh(cx)))
             .on_action(cx.listener(|this, _: &FocusSearch, window, cx| this.focus_search(window, cx)))
             .on_action(cx.listener(|this, _: &Escape, window, cx| {

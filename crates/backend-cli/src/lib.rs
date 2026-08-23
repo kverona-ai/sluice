@@ -811,6 +811,58 @@ impl GitCli {
             .map(|_| ())
     }
 
+    // ----- forge / PR helpers (M6) ------------------------------------------
+
+    pub fn remote_url(&self, remote: &str) -> Result<String> {
+        let out = self.expect_ok(
+            self.run_read(&["remote", "get-url", remote])?,
+            "git remote get-url",
+        )?;
+        Ok(out.stdout_str().trim().to_string())
+    }
+
+    /// `git fetch <remote> <refspec>` (e.g. `refs/pull/12/head:refs/remotes/origin/pr/12`).
+    pub fn fetch_refspec(&self, remote: &str, refspec: &str) -> Result<()> {
+        self.expect_ok(self.run(&["fetch", "--no-tags", remote, refspec])?, "git fetch")
+            .map(|_| ())
+    }
+
+    pub fn rev_parse(&self, rev: &str) -> Result<String> {
+        let out = self.expect_ok(self.run_read(&["rev-parse", "--verify", rev])?, "git rev-parse")?;
+        Ok(out.stdout_str().trim().to_string())
+    }
+
+    pub fn merge_base(&self, a: &str, b: &str) -> Result<String> {
+        let out = self.expect_ok(self.run_read(&["merge-base", a, b])?, "git merge-base")?;
+        Ok(out.stdout_str().trim().to_string())
+    }
+
+    /// `git diff --name-status -M <a> <b>` → (status, path, old_path)
+    pub fn diff_name_status(&self, a: &str, b: &str) -> Result<Vec<(char, String, Option<String>)>> {
+        let out = self.expect_ok(
+            self.run_read(&["diff", "--name-status", "-M", a, b])?,
+            "git diff --name-status",
+        )?;
+        let mut v = Vec::new();
+        for line in out.stdout_str().lines() {
+            let mut parts = line.split('\t');
+            let Some(st) = parts.next() else { continue };
+            let code = st.chars().next().unwrap_or('M');
+            match code {
+                'R' | 'C' => {
+                    let old = parts.next().unwrap_or("").to_string();
+                    let new = parts.next().unwrap_or("").to_string();
+                    v.push((code, new, Some(old)));
+                }
+                _ => {
+                    let p = parts.next().unwrap_or("").to_string();
+                    v.push((code, p, None));
+                }
+            }
+        }
+        Ok(v)
+    }
+
     /// Undo the last (unpushed) commit keeping its changes staged (05 §5).
     pub fn undo_last_commit(&self) -> Result<()> {
         self.expect_ok(self.run(&["reset", "--soft", "HEAD~1"])?, "git reset --soft")
