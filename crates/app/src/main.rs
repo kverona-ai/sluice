@@ -183,7 +183,7 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                 titlebar: Some(TitlebarOptions {
                     title: Some(title.clone().into()),
                     appears_transparent: true,
-                    traffic_light_position: Some(point(px(12.), px(8.))),
+                    traffic_light_position: Some(point(px(12.), px(13.))),
                 }),
                 window_min_size: Some(size(px(1100.), px(680.))),
                 window_background: WindowBackgroundAppearance::Opaque,

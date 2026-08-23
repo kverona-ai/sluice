@@ -108,6 +108,9 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("时光机（快照）", "⌘7", "Ctrl+7"),
     ("Push 对话框", "⌘⇧K", "Ctrl+Shift+K"),
     ("搜索提交", "⌘F", "Ctrl+F"),
+    ("作者过滤下拉", "⌘U", "Ctrl+U"),
+    ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
+    ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
     ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
     ("提交", "⌘↩", "Ctrl+Enter"),
     ("全部暂存 / 取消暂存", "⌥⌘A / ⌥⌘U", "Ctrl+Alt+A / U"),
@@ -184,6 +187,11 @@ impl Workbench {
 
     /// Close the topmost transient surface. Returns true when something closed.
     pub(crate) fn dismiss_top(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.popup.is_some() {
+            self.popup = None;
+            cx.notify();
+            return true;
+        }
         if self.ctx_menu.is_some() {
             self.ctx_menu = None;
             cx.notify();

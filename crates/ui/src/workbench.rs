@@ -52,6 +52,8 @@ actions!(
         OpenSettings,
         OpenPush,
         ToggleTheme,
+        OpenUserFilter,
+        OpenDateFilter,
         StageAll,
         UnstageAll,
         ToggleSelected,
@@ -108,7 +110,7 @@ pub struct Workbench {
     pub detail_for: Option<Oid>,
     pub selected_ref: Option<String>,
     pub search: Entity<InputState>,
-    pub popup: Option<Popup>,
+    pub popup: Option<(Popup, gpui::Point<gpui::Pixels>)>,
     pub scroll: UniformListScrollHandle,
     /// Diff of a file of the selected commit, shown in the log center.
     pub commit_diff: Option<DiffView>,
@@ -668,7 +670,14 @@ impl Workbench {
 
     fn render_titlebar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
-        let subtitle = self.title();
+        let repo_name = self.repo.info.name.clone();
+        let branch = self
+            .repo
+            .info
+            .head
+            .branch
+            .clone()
+            .unwrap_or_else(|| "detached HEAD".into());
         let tabs = [Tab::Changes, Tab::Log, Tab::Console];
         let active = self.tab;
         let is_mac = cfg!(target_os = "macos");
@@ -676,12 +685,12 @@ impl Workbench {
         div()
             .id("titlebar")
             .relative()
-            .h(px(if is_mac { 54. } else { 40. }))
+            .h(px(40.))
             .flex_none()
             .flex()
             .items_center()
-            .gap(px(16.))
-            .px(px(18.))
+            .gap(px(12.))
+            .px(px(14.))
             .bg(t.chrome)
             .border_b_1()
             .border_color(t.line_soft)
@@ -698,37 +707,34 @@ impl Workbench {
                     .absolute()
                     .inset_0()
                     .flex()
-                    .flex_col()
                     .items_center()
                     .justify_center()
                     .child(
                         div()
                             .flex()
-                            .flex_col()
-                            .items_center()
+                            .items_baseline()
+                            .gap(px(8.))
                             .child(
                                 div()
                                     .font_family(FONT_HEADING)
                                     .font_weight(gpui::FontWeight::SEMIBOLD)
                                     .text_size(px(13.5))
-                                    .line_height(px(17.))
                                     .child("sluice"),
                             )
                             .child(
                                 div()
-                                    .text_size(px(10.5))
-                                    .line_height(px(13.))
+                                    .text_size(px(11.5))
                                     .text_color(t.muted)
-                                    .child(subtitle),
+                                    .child(format!("{repo_name} — {branch}")),
                             ),
                     ),
             )
-            .when(is_mac, |d| d.child(div().w(px(56.)).flex_none()))
+            .when(is_mac, |d| d.child(div().w(px(64.)).flex_none()))
             .child(
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(6.))
+                    .gap(px(4.))
                     .flex_none()
                     .child(
                         chrome_button(
@@ -761,14 +767,14 @@ impl Workbench {
                     .ml_auto()
                     .flex()
                     .items_center()
-                    .gap(px(14.))
+                    .gap(px(10.))
                     .flex_none()
                     .child(
                         div()
                             .flex()
                             .gap(px(2.))
                             .p(px(2.))
-                            .rounded(px(9.))
+                            .rounded(px(8.))
                             .bg(t.ink_08)
                             .children(tabs.into_iter().enumerate().map(|(ix, tab)| {
                                 let on = tab == active;
@@ -777,10 +783,10 @@ impl Workbench {
                                     .flex()
                                     .items_center()
                                     .gap(px(6.))
-                                    .px(px(14.))
-                                    .py(px(3.))
-                                    .rounded(px(7.))
-                                    .text_size(px(12.5))
+                                    .px(px(12.))
+                                    .py(px(2.))
+                                    .rounded(px(6.))
+                                    .text_size(px(12.))
                                     .text_color(t.ink)
                                     .cursor_pointer()
                                     .when(on, |d| {
@@ -788,6 +794,7 @@ impl Workbench {
                                             .font_weight(gpui::FontWeight::SEMIBOLD)
                                             .shadow_sm()
                                     })
+                                    .when(!on, |d| d.hover(move |st| st.bg(t.ink_05)))
                                     .on_click(cx.listener(move |this, _, _, cx| this.set_tab(tab, cx)))
                                     .child(tab.label())
                                     .when(tab == Tab::Changes && pending > 0, |d| {
@@ -808,7 +815,7 @@ impl Workbench {
                         div()
                             .flex()
                             .items_center()
-                            .gap(px(4.))
+                            .gap(px(2.))
                             .child(
                                 chrome_button("tb-ai", &t, "sparkle", "AI 工具接入向导（M4）", false)
                                     .on_click(cx.listener(|this, _, _, cx| {
@@ -904,37 +911,6 @@ impl Workbench {
             .bg(t.ink_05)
             .border_r_1()
             .border_color(t.line_55)
-            .child(
-                div().flex().justify_end().px(px(4.)).pb(px(2.)).child(
-                    div()
-                        .id("rail-expand")
-                        .w(px(20.))
-                        .h(px(20.))
-                        .flex()
-                        .items_center()
-                        .justify_center()
-                        .rounded(px(5.))
-                        .cursor_pointer()
-                        .hover(move |s| s.bg(t.ink_08))
-                        .tooltip(move |window, cx| {
-                            Tooltip::new(if expanded {
-                                "收起工具栏"
-                            } else {
-                                "展开工具栏（显示文字说明）"
-                            })
-                            .build(window, cx)
-                        })
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.rail_expanded = !this.rail_expanded;
-                            cx.notify();
-                        }))
-                        .child(icon_b(
-                            if expanded { "caret-left" } else { "caret-right" },
-                            px(12.),
-                            t.muted,
-                        )),
-                ),
-            )
             .child(
                 item(
                     "rail-log",
@@ -1033,6 +1009,26 @@ impl Workbench {
                             .on_click(cx.listener(|this, _, _, cx| this.open_settings(cx))),
                     ),
             )
+            .child(
+                rail_item(
+                    "rail-expand",
+                    &t,
+                    if expanded { "caret-left" } else { "caret-right" },
+                    "收起",
+                    if expanded {
+                        "收起工具栏"
+                    } else {
+                        "展开工具栏（图标旁显示说明）"
+                    },
+                    false,
+                    expanded,
+                    None,
+                )
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.rail_expanded = !this.rail_expanded;
+                    cx.notify();
+                })),
+            )
     }
 
     fn render_toast(&self) -> Option<impl IntoElement> {
@@ -1093,6 +1089,16 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
             .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
+            .on_action(cx.listener(|this, _: &OpenUserFilter, _, cx| {
+                this.tab = Tab::Log;
+                this.popup = Some((Popup::Users, gpui::point(px(620.), px(64.))));
+                cx.notify();
+            }))
+            .on_action(cx.listener(|this, _: &OpenDateFilter, _, cx| {
+                this.tab = Tab::Log;
+                this.popup = Some((Popup::Date, gpui::point(px(690.), px(64.))));
+                cx.notify();
+            }))
             .on_action(cx.listener(|this, _: &NextHunk, _, cx| this.jump_hunk(1, cx)))
             .on_action(cx.listener(|this, _: &PrevHunk, _, cx| this.jump_hunk(-1, cx)))
             .on_action(cx.listener(|this, _: &ToggleSideBySide, _, cx| {

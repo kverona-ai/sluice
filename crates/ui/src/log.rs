@@ -10,6 +10,7 @@ use gpui::{
     PathBuilder, Pixels, Point, Rgba, StatefulInteractiveElement, Styled, Window, canvas, div, point, px,
     quad, size, uniform_list,
 };
+use gpui::{Corner, MouseDownEvent, anchored, deferred};
 use gpui_component::input::Input;
 use sluice_core::*;
 use sluice_domain::{DateFilter, LogSnapshot};
@@ -379,28 +380,32 @@ impl Workbench {
                 div()
                     .id("f-user")
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.popup = if this.popup == Some(Popup::Users) {
-                            None
-                        } else {
-                            Some(Popup::Users)
-                        };
-                        cx.notify();
-                    }))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.popup = match this.popup {
+                                Some((Popup::Users, _)) => None,
+                                _ => Some((Popup::Users, ev.position)),
+                            };
+                            cx.notify();
+                        }),
+                    )
                     .child(chip(users_on, users_label)),
             )
             .child(
                 div()
                     .id("f-date")
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.popup = if this.popup == Some(Popup::Date) {
-                            None
-                        } else {
-                            Some(Popup::Date)
-                        };
-                        cx.notify();
-                    }))
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|this, ev: &MouseDownEvent, _, cx| {
+                            this.popup = match this.popup {
+                                Some((Popup::Date, _)) => None,
+                                _ => Some((Popup::Date, ev.position)),
+                            };
+                            cx.notify();
+                        }),
+                    )
                     .child(chip(date_on, date_label)),
             )
             .child(
@@ -468,22 +473,22 @@ impl Workbench {
             .children(self.render_popup(cx))
     }
 
+    /// User / Date filter dropdowns. Painted through `deferred(anchored(..))` so the
+    /// menu always draws above the commit list and clamps to the window.
     fn render_popup(&mut self, cx: &mut Context<Self>) -> Option<impl IntoElement> {
         let t = self.theme;
-        let popup = self.popup?;
-        let mut menu = div()
-            .id("popup")
-            .absolute()
-            .top(px(36.))
-            .left(px(if popup == Popup::Users { 330. } else { 420. }))
-            .min_w(px(200.))
-            .max_h(px(320.))
+        let (popup, at) = self.popup.clone()?;
+        let mut panel = div()
+            .id("filter-popup")
+            .occlude()
+            .w(px(252.))
+            .max_h(px(360.))
             .overflow_y_scroll()
             .bg(t.surface)
             .border_1()
             .border_color(t.line)
-            .rounded(px(7.))
-            .shadow_md()
+            .rounded(px(8.))
+            .shadow_lg()
             .py(px(4.))
             .text_size(px(12.5))
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
@@ -492,67 +497,181 @@ impl Workbench {
             }));
         match popup {
             Popup::Users => {
+                let mut counts: std::collections::HashMap<String, (usize, bool)> =
+                    std::collections::HashMap::new();
+                if let Some(log) = self.log.as_ref() {
+                    for c in &log.commits {
+                        let e = counts.entry(c.author.name.clone()).or_insert((0, false));
+                        e.0 += 1;
+                        e.1 |= c.agent.is_ai();
+                    }
+                }
                 let authors = self.log.as_ref().map(|l| l.authors.clone()).unwrap_or_default();
                 let selected = self.filter.authors.clone();
-                menu = menu.child(
-                    div()
-                        .id("users-clear")
-                        .px(px(12.))
-                        .py(px(4.))
-                        .cursor_pointer()
-                        .text_color(t.cyan_deep)
-                        .on_click(cx.listener(|this, _, _, cx| {
-                            this.filter.authors.clear();
-                            this.apply_filter(cx);
-                        }))
-                        .child("全部作者"),
-                );
-                menu = menu.children(authors.into_iter().enumerate().map(|(i, name)| {
-                    let on = selected.contains(&name);
-                    let n2 = name.clone();
-                    div()
-                        .id(("user", i))
-                        .px(px(12.))
-                        .py(px(4.))
-                        .flex()
-                        .items_center()
-                        .gap(px(8.))
-                        .cursor_pointer()
-                        .when(on, |d| d.bg(t.sel))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            if !this.filter.authors.remove(&n2) {
-                                this.filter.authors.insert(n2.clone());
-                            }
-                            this.apply_filter(cx);
-                        }))
-                        .child(crate::workbench::checkbox(&t, on, false))
-                        .child(name)
-                }));
+                let any = !selected.is_empty();
+                panel = panel
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .px(px(12.))
+                            .py(px(5.))
+                            .border_b_1()
+                            .border_color(t.line_soft)
+                            .child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(t.faint)
+                                    .child(format!("按作者过滤 · {} 人 · 可多选", authors.len())),
+                            )
+                            .child(
+                                div()
+                                    .id("users-clear")
+                                    .ml_auto()
+                                    .px(px(7.))
+                                    .py(px(1.))
+                                    .rounded(px(4.))
+                                    .text_size(px(11.5))
+                                    .cursor_pointer()
+                                    .text_color(if any { t.cyan_deep } else { t.faint })
+                                    .hover(move |st| st.bg(t.cyan_16))
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.filter.authors.clear();
+                                        this.apply_filter(cx);
+                                    }))
+                                    .child("清除"),
+                            ),
+                    )
+                    .children(authors.into_iter().enumerate().map(|(i, name)| {
+                        let on = selected.contains(&name);
+                        let (n_commits, is_ai) = counts.get(&name).copied().unwrap_or((0, false));
+                        let initial: String = name.chars().next().map(|c| c.to_string()).unwrap_or_default();
+                        let dot_color = t.lane((name.len() as u16) % 3);
+                        let n2 = name.clone();
+                        div()
+                            .id(("user", i))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .py(px(4.))
+                            .rounded(px(6.))
+                            .cursor_pointer()
+                            .when(on, |d| d.bg(t.sel))
+                            .hover(move |st| st.bg(if on { t.sel } else { t.ink_05 }))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if !this.filter.authors.remove(&n2) {
+                                    this.filter.authors.insert(n2.clone());
+                                }
+                                this.apply_filter(cx);
+                            }))
+                            .child(crate::workbench::checkbox(&t, on, false))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .w(px(18.))
+                                    .h(px(18.))
+                                    .rounded(px(9.))
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .border_1()
+                                    .border_color(dot_color)
+                                    .text_color(dot_color)
+                                    .text_size(px(10.))
+                                    .child(initial),
+                            )
+                            .child(div().flex_1().min_w_0().truncate().child(name))
+                            .when(is_ai, |d| {
+                                d.child(
+                                    div()
+                                        .flex_none()
+                                        .text_size(px(9.5))
+                                        .px(px(4.))
+                                        .border_1()
+                                        .border_color(t.mag)
+                                        .text_color(t.mag_deep)
+                                        .rounded(px(4.))
+                                        .child("AI"),
+                                )
+                            })
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .font_family(FONT_MONO)
+                                    .text_size(px(10.5))
+                                    .text_color(t.faint)
+                                    .child(format!("{n_commits}")),
+                            )
+                    }));
             }
             Popup::Date => {
                 let current = self.filter.date;
-                menu = menu.children(DateFilter::ALL.into_iter().enumerate().map(|(i, d)| {
-                    let on = d == current;
-                    div()
-                        .id(("date", i))
-                        .px(px(12.))
-                        .py(px(4.))
-                        .cursor_pointer()
-                        .when(on, |x| x.bg(t.sel))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.filter.date = d;
-                            this.popup = None;
-                            this.apply_filter(cx);
-                        }))
-                        .child(if d == DateFilter::Any {
-                            "全部时间".to_string()
-                        } else {
-                            d.label().to_string()
-                        })
-                }));
+                panel = panel
+                    .child(
+                        div()
+                            .px(px(12.))
+                            .py(px(5.))
+                            .border_b_1()
+                            .border_color(t.line_soft)
+                            .child(div().text_size(px(11.)).text_color(t.faint).child("按时间过滤")),
+                    )
+                    .children(DateFilter::ALL.into_iter().enumerate().map(|(i, d)| {
+                        let on = d == current;
+                        div()
+                            .id(("date", i))
+                            .flex()
+                            .items_center()
+                            .gap(px(8.))
+                            .mx(px(4.))
+                            .px(px(8.))
+                            .py(px(4.))
+                            .rounded(px(6.))
+                            .cursor_pointer()
+                            .when(on, |x| x.bg(t.sel))
+                            .hover(move |st| st.bg(if on { t.sel } else { t.ink_05 }))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.filter.date = d;
+                                this.popup = None;
+                                this.apply_filter(cx);
+                            }))
+                            .child(
+                                div()
+                                    .flex_none()
+                                    .w(px(12.))
+                                    .h(px(12.))
+                                    .rounded(px(6.))
+                                    .border_1()
+                                    .border_color(if on { t.cyan } else { t.line })
+                                    .flex()
+                                    .items_center()
+                                    .justify_center()
+                                    .child(div().w(px(6.)).h(px(6.)).rounded(px(3.)).bg(if on {
+                                        t.cyan
+                                    } else {
+                                        gpui::transparent_black().into()
+                                    })),
+                            )
+                            .child(if d == DateFilter::Any {
+                                "全部时间".to_string()
+                            } else {
+                                d.label().to_string()
+                            })
+                    }));
             }
         }
-        Some(menu)
+        Some(
+            deferred(
+                anchored()
+                    .position(at + gpui::point(px(-8.), px(14.)))
+                    .anchor(Corner::TopLeft)
+                    .snap_to_window_with_margin(px(8.))
+                    .child(panel),
+            )
+            .with_priority(2),
+        )
     }
 
     fn render_commit_list(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
