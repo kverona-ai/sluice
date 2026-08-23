@@ -469,9 +469,9 @@ fn run_session_with_first(inner: Arc<Inner>, mut link: Link, first: Vec<u8>) -> 
         queue: inner.backend.queue(),
     };
     let (sealer, opener, secrets, reply) = resp.respond(dh_pub, &serde_json::to_vec(&welcome)?)?;
-    write_frame(&mut link.writer, &reply)?;
 
-    // Persist trust (pairing) / last-seen (resume).
+    // Persist trust (pairing) / last-seen (resume) and burn the one-time code *before*
+    // answering, so the device never observes a desktop that has not recorded it yet.
     let device = DeviceInfo {
         id: header.device_id.clone(),
         name: hello.device_name.clone(),
@@ -500,6 +500,7 @@ fn run_session_with_first(inner: Arc<Inner>, mut link: Link, first: Vec<u8>) -> 
     if pairing {
         *inner.pending_pairing.lock().unwrap() = None; // one-time code consumed
     }
+    write_frame(&mut link.writer, &reply)?;
     inner.backend.on_devices_changed();
     link.set_read_timeout(None);
     serve(inner, link, sealer, opener, secrets, device, sign_pub)
