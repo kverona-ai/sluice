@@ -771,19 +771,17 @@ impl Workbench {
             .w(px(430.))
             .flex()
             .flex_col()
-            .child(
-                self.panel_header(
-                    &t,
-                    "推送",
-                    format!(
+            .child(self.panel_header(
+                &t,
+                "推送",
+                format!(
                         "{branch} → {}",
                         upstream
                             .clone()
                             .unwrap_or_else(|| "origin（新建 upstream）".into())
                     ),
-                    cx,
-                ),
-            )
+                cx,
+            ))
             .child(
                 div()
                     .px(px(16.))
@@ -1608,7 +1606,7 @@ impl Workbench {
                 .hover(move |s| s.bg(if danger { t.mag_soft } else { t.cyan_soft }))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.run_git(
-                        format!("{step}"),
+                        step.to_string(),
                         move |cli| {
                             cli.op_step(op, step)?;
                             Ok(String::new())
