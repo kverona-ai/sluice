@@ -18,6 +18,7 @@ use crate::workbench::{Tab, Workbench, checkbox, section_label};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Overlay {
+    Recent,
     AiConnect,
     Proposals,
     Askpass,
@@ -120,6 +121,7 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
     ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
     ("待确认队列（AI 提议）", "⌘⇧P", "Ctrl+Shift+P"),
+    ("打开仓库 / 最近仓库", "⌘O / ⌘⇧O", "Ctrl+O / Ctrl+Shift+O"),
     ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
     ("提交", "⌘↩", "Ctrl+Enter"),
     ("全部暂存 / 取消暂存", "⌥⌘A / ⌥⌘U", "Ctrl+Alt+A / U"),
@@ -600,6 +602,7 @@ impl Workbench {
         let t = self.theme;
         let overlay = self.overlay.clone()?;
         let content: gpui::AnyElement = match &overlay {
+            Overlay::Recent => self.render_recent(cx).into_any_element(),
             Overlay::AiConnect => self.render_ai_connect(cx).into_any_element(),
             Overlay::Proposals => self.render_proposals(cx).into_any_element(),
             Overlay::Askpass => match self.render_askpass(cx) {

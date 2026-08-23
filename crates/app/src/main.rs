@@ -313,7 +313,33 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
         // SAFETY: set before any thread is spawned; read later by GitCli::command.
         unsafe { std::env::set_var("SLUICE_ASKPASS_EXE", exe) };
     }
-    let repo = Repo::open(&path).with_context(|| format!("opening {}", path.display()))?;
+    let repo = match Repo::open(&path) {
+        Ok(r) => r,
+        Err(e) => {
+            // Not a repository here: fall back to the most recent one.
+            match sluice_ui::recent::load()
+                .into_iter()
+                .find(|r| r.path.join(".git").exists())
+            {
+                Some(r) => {
+                    eprintln!(
+                        "{} is not a git repository; opening recent {}",
+                        path.display(),
+                        r.path.display()
+                    );
+                    Repo::open(&r.path).with_context(|| format!("opening {}", r.path.display()))?
+                }
+                None => return Err(e).with_context(|| format!("opening {}", path.display())),
+            }
+        }
+    };
+    sluice_ui::recent::remember(
+        repo.cli
+            .as_ref()
+            .map(|c| c.workdir().to_path_buf())
+            .as_deref()
+            .unwrap_or(&path),
+    );
     let (ipc_tx, ipc_rx) = async_channel::unbounded();
     let ipc_repo = repo
         .cli

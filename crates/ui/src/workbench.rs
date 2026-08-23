@@ -59,6 +59,8 @@ actions!(
         OpenBlame,
         OpenAiConnect,
         OpenProposals,
+        OpenRepository,
+        OpenRecent,
         ProposalAccept,
         ProposalReject,
         StageAll,
@@ -162,6 +164,7 @@ pub struct Workbench {
     pub ai_report: Option<String>,
     pub ai_busy_connect: bool,
     pub proposals: Vec<crate::proposals::PendingProposal>,
+    pub recent: Vec<crate::recent::RecentRepo>,
     pub provenance_cache: Option<(Oid, Vec<sluice_bridge::provenance::SessionMatch>)>,
     pub pending_askpass_prompt: Option<(String, std::sync::mpsc::Sender<Option<String>>)>,
     pub askpass_input: Entity<InputState>,
@@ -274,6 +277,7 @@ impl Workbench {
             ai_report: None,
             ai_busy_connect: false,
             proposals: Vec::new(),
+            recent: Vec::new(),
             provenance_cache: None,
             pending_askpass_prompt: None,
             askpass_input,
@@ -1179,9 +1183,22 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
             .on_action(cx.listener(|this, _: &OpenAiConnect, _, cx| this.open_ai_connect(cx)))
             .on_action(cx.listener(|this, _: &OpenProposals, _, cx| this.open_proposals(cx)))
-            .on_action(cx.listener(|this, _: &ProposalAccept, _, cx| {
+            .on_action(cx.listener(|this, _: &OpenRepository, window, cx| this.pick_repository(window, cx)))
+            .on_action(cx.listener(|this, _: &OpenRecent, _, cx| this.open_recent(cx)))
+            .on_action(cx.listener(|this, _: &ProposalAccept, window, cx| {
                 if this.overlay == Some(crate::overlays::Overlay::Proposals) {
                     this.decide_proposal(0, true, cx);
+                } else if this.overlay == Some(crate::overlays::Overlay::Recent) {
+                    let current = this.repo.cli.as_ref().map(|c| c.workdir().to_path_buf());
+                    if let Some(r) = this
+                        .recent
+                        .iter()
+                        .find(|r| Some(&r.path) != current.as_ref())
+                        .cloned()
+                    {
+                        this.overlay = None;
+                        this.switch_repository(r.path, window, cx);
+                    }
                 }
             }))
             .on_action(cx.listener(|this, _: &ProposalReject, _, cx| {
