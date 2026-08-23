@@ -187,6 +187,19 @@ impl Workbench {
     }
 
     pub(crate) fn open_work_file(&mut self, wf: WorkFile, cx: &mut Context<Self>) {
+        // Conflicted entries open in the three-way resolver instead of the diff.
+        let is_conflict = self.changes.as_ref().is_some_and(|c| {
+            c.status
+                .entries
+                .iter()
+                .any(|e| e.path == wf.path && e.conflict.is_some())
+        });
+        if is_conflict {
+            self.work_file = Some(wf.clone());
+            self.open_conflict(wf.path, cx);
+            return;
+        }
+        self.conflict = None;
         let reader = self.repo.reader.clone();
         let opts = self.diff_opts;
         let same = self.work_file.as_ref() == Some(&wf);
@@ -467,7 +480,9 @@ impl Workbench {
             self.commit_msg.update(cx, |s, cx| s.set_value("", window, cx));
         }
         let t = self.theme;
-        let right: gpui::AnyElement = if self.file_view.is_some() {
+        let right: gpui::AnyElement = if self.conflict.is_some() {
+            self.render_conflict_view(cx).into_any_element()
+        } else if self.file_view.is_some() {
             self.render_file_view(cx).into_any_element()
         } else if self.work_diff.is_some() {
             self.render_work_diff_pane(cx).into_any_element()

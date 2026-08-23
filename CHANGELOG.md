@@ -6,6 +6,15 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **Interactive rebase planner** (commit context menu / ⌥⌘R): pick · reword · squash · fixup ·
+  drop, reorder (⌥↑/⌥↓), reword editor; runs `git rebase -i` through the plan-driven
+  `sluice seq-editor` / `sluice editor`; safety snapshot first; conflicts → in-progress banner.
+- **Three-way conflict resolver**: conflicted files open in a marker-aware view (ours / theirs /
+  base), per-block take ours / theirs / both (⌥1/⌥2/⌥3), whole-file shortcuts, save, save & mark
+  resolved (⌘S → `git add`).
+- **Multi-repo**: recent repositories panel (⌘⇧O), native folder picker (⌘O), in-window switch.
+- **Release workflow**: macOS arm64 / x86_64 + Windows x86_64 archives with SHA256SUMS on `v*`
+  tags (unsigned previews), dry-run via workflow_dispatch.
 - **Propose-and-confirm queue**: loopback IPC between the desktop app and `sluice mcp serve`;
   MCP tools `propose_commit` / `propose_branch` / `propose_push` block until a human decides in
   the queue (`⌘⇧P`, rail badge); accepted proposals run through the user's git and the result is

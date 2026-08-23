@@ -64,6 +64,10 @@ actions!(
         RebaseMoveUp,
         RebaseMoveDown,
         RebaseFromSelection,
+        ConflictOurs,
+        ConflictTheirs,
+        ConflictBoth,
+        ConflictResolve,
         ProposalAccept,
         ProposalReject,
         StageAll,
@@ -169,6 +173,7 @@ pub struct Workbench {
     pub proposals: Vec<crate::proposals::PendingProposal>,
     pub recent: Vec<crate::recent::RecentRepo>,
     pub rebase: Option<crate::rebase::RebaseDraft>,
+    pub conflict: Option<crate::conflict::ConflictView>,
     pub rebase_msg: Entity<InputState>,
     pub provenance_cache: Option<(Oid, Vec<sluice_bridge::provenance::SessionMatch>)>,
     pub pending_askpass_prompt: Option<(String, std::sync::mpsc::Sender<Option<String>>)>,
@@ -297,6 +302,7 @@ impl Workbench {
             proposals: Vec::new(),
             recent: Vec::new(),
             rebase: None,
+            conflict: None,
             rebase_msg,
             provenance_cache: None,
             pending_askpass_prompt: None,
@@ -708,6 +714,11 @@ impl Workbench {
     }
 
     pub fn close_diff(&mut self, cx: &mut Context<Self>) {
+        if self.conflict.is_some() {
+            self.conflict = None;
+            cx.notify();
+            return;
+        }
         if self.file_view.is_some() {
             self.file_view = None;
             self.popup = None;
@@ -1196,6 +1207,16 @@ impl Render for Workbench {
                     this.move_by(1, cx)
                 }
             }))
+            .on_action(cx.listener(|this, _: &ConflictOurs, _, cx| {
+                this.conflict_choose_current(crate::conflict::Choice::Ours, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ConflictTheirs, _, cx| {
+                this.conflict_choose_current(crate::conflict::Choice::Theirs, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ConflictBoth, _, cx| {
+                this.conflict_choose_current(crate::conflict::Choice::Both, cx)
+            }))
+            .on_action(cx.listener(|this, _: &ConflictResolve, _, cx| this.conflict_save(true, cx)))
             .on_action(cx.listener(|this, _: &RebaseMoveUp, _, cx| this.rebase_reorder(-1, cx)))
             .on_action(cx.listener(|this, _: &RebaseMoveDown, _, cx| this.rebase_reorder(1, cx)))
             .on_action(cx.listener(|this, _: &RebaseFromSelection, _, cx| {

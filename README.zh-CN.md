@@ -45,6 +45,7 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 | **AI 提交信息** | 由本机已装 CLI 起草——Claude Code、Codex CLI、Grok Build、DeepSeek Harness、Gemini CLI、Kimi Code、Z Code、Qwen Code、opencode、GitHub Copilot CLI——自动探测、零密钥 |
 | **一键接入 AI 工具** | `⌘⇧I` 或 `sluice ai connect`：把 Sluice 的只读 MCP server 注册进每个已装 AI CLI（优先用工具自己的 `mcp add`，没有命令的工具则带备份地写配置文件） |
 | **文件历史与 Blame** | 逐文件 `git log --follow` 可跳转到提交；blame 按提交分带的槽、悬停高亮整个提交（`⌘⇧H` / `⌥⌘B`，或右键任意文件） |
+| **交互式 rebase 与冲突** | 计划驱动的 `git rebase -i`（pick/reword/squash/fixup/drop、重排）与三方冲突解决器（逐块取我们的/他们的/两者，保存并标记已解决） |
 | **分支 / Stash / 时光机** | 分支面板 checkout · merge · rebase · 删除 · 新建；stash push/apply/pop/drop；丢弃 / reset --hard 前自动安全快照 |
 | **代理溯源** | 每条提交归因到产生它的代理（当前基于 trailer 分析，确定性会话溯源在路线图上） |
 | **实时刷新** | 工作区 + `.git` 监听；代理的任何动作约 200ms 内可见 |
@@ -136,7 +137,7 @@ IDEA 风格预设（Windows/Linux 用 `Ctrl` 代替 `⌘`）：`↑/↓/PgUp/PgD
 
 - ✅ **M1 —— 审查**：提交图、refs、过滤、diff、详情、实时监听
 - ✅ **M2 —— 提交**：行级暂存、提交面板、AI 起草、推拉
-- 🔨 **M3 —— 分支**（当前）：分支面板、merge / rebase、stash、快照、文件历史与 blame 已完成；交互式 rebase 界面与三方合并器接下来
+- ✅ **M3 —— 分支**：分支面板、merge / rebase、交互式 rebase、stash、快照、三方冲突解决器、文件历史与 blame、多仓库
 - 🔨 **M4 —— AI 桥接**（大部分完成）：MCP server（读工具 + propose_* 工具）、一键接入含 hooks、提议-确认队列、会话溯源、askpass；接下来是向导打磨与 public beta 打包
 - ⏭ **M5 —— 移动伴侣**：iOS / Android 上审查与放行，复用同一 Rust 核心
 - ⏭ **M6 —— 扩展**：GitHub / GitLab PR 评审、jujutsu (jj) 后端

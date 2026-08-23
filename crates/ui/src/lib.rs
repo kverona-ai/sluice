@@ -5,6 +5,7 @@
 pub mod ai;
 pub mod assets;
 pub mod changes;
+pub mod conflict;
 pub mod console;
 pub mod diff_view;
 pub mod file_view;
@@ -83,6 +84,11 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-shift-o", workbench::OpenRecent, ctx),
         KeyBinding::new("enter", workbench::ProposalAccept, nav),
         KeyBinding::new("alt-up", workbench::RebaseMoveUp, nav),
+        KeyBinding::new("alt-1", workbench::ConflictOurs, nav),
+        KeyBinding::new("alt-2", workbench::ConflictTheirs, nav),
+        KeyBinding::new("alt-3", workbench::ConflictBoth, nav),
+        KeyBinding::new("cmd-s", workbench::ConflictResolve, ctx),
+        KeyBinding::new("ctrl-s", workbench::ConflictResolve, ctx),
         KeyBinding::new("cmd-alt-r", workbench::RebaseFromSelection, ctx),
         KeyBinding::new("ctrl-alt-r", workbench::RebaseFromSelection, ctx),
         KeyBinding::new("alt-down", workbench::RebaseMoveDown, nav),

@@ -61,6 +61,7 @@ rebuilt for the agentic era:
 | **Propose-and-confirm queue** | agents call `propose_commit` / `propose_branch` / `propose_push` over MCP; the call blocks until you accept or reject in Sluice (`⌘⇧P`), and only an accepted proposal runs — via your own git |
 | **Session provenance** | `sluice hook <tool>` events (installed with one click) link commits to the AI sessions that touched the same files, even when no trailer was written |
 | **File history & blame** | `git log --follow` per file with jump-to-commit; blame with commit-banded gutter, hover to highlight a commit (`⌘⇧H` / `⌥⌘B`, or right-click any file) |
+| **Interactive rebase & conflicts** | plan-driven `git rebase -i` (pick/reword/squash/fixup/drop, reorder) and a three-way resolver for conflicted files (take ours/theirs/both per block, save & mark resolved) |
 | **Branches / stash / time machine** | branches panel with checkout · merge · rebase · delete · new; stash push/apply/pop/drop; automatic safety snapshots before discard / reset --hard |
 | **Agent provenance** | commits are attributed to the agent that made them (trailer analysis today, deterministic session tracking on the roadmap) |
 | **Live refresh** | worktree + `.git` watcher; anything an agent does shows up in ~200 ms |
@@ -158,8 +159,8 @@ IDEA-style preset (`Ctrl` instead of `⌘` on Windows/Linux): `↑/↓/PgUp/PgDn
 
 - ✅ **M1 — Review**: commit graph, refs, filters, diffs, details, live watcher
 - ✅ **M2 — Commit**: staging down to lines, commit panel, AI drafts, push/pull
-- 🔨 **M3 — Branches** *(current)*: branches panel, merge / rebase, stash, snapshots, file
-  history & blame done; interactive rebase UI and 3-way merge resolver next
+- ✅ **M3 — Branches**: branches panel, merge / rebase, interactive rebase, stash, snapshots,
+  three-way conflict resolver, file history & blame, multi-repo
 - 🔨 **M4 — AI bridge** *(mostly done)*: MCP server (read tools + propose_* tools), one-click
   hookup incl. hooks, propose-and-confirm queue, session provenance, askpass; setup wizard polish
   and public beta packaging next
