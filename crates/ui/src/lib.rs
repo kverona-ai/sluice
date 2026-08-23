@@ -19,6 +19,7 @@ pub mod rebase;
 pub mod recent;
 pub mod theme;
 pub mod workbench;
+pub mod worktrees;
 
 use gpui::{App, KeyBinding};
 
@@ -107,6 +108,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("cmd-alt-d", workbench::OpenDateFilter, ctx),
         KeyBinding::new("cmd-alt-p", workbench::OpenPathFilter, ctx),
         KeyBinding::new("cmd-shift-m", workbench::OpenMessageHistory, ctx),
+        KeyBinding::new("cmd-shift-w", workbench::OpenWorktrees, ctx),
+        KeyBinding::new("ctrl-shift-w", workbench::OpenWorktrees, ctx),
         KeyBinding::new("ctrl-shift-m", workbench::OpenMessageHistory, ctx),
         KeyBinding::new("ctrl-alt-p", workbench::OpenPathFilter, ctx),
         KeyBinding::new("ctrl-alt-d", workbench::OpenDateFilter, ctx),

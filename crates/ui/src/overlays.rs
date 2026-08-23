@@ -19,6 +19,7 @@ use crate::workbench::{Tab, Workbench, checkbox, section_label};
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Overlay {
+    Worktrees,
     Rebase,
     Recent,
     AiConnect,
@@ -52,6 +53,9 @@ pub enum ConfirmAction {
     DeleteSnapshot {
         refname: String,
     },
+    RemoveWorktree {
+        path: std::path::PathBuf,
+    },
 }
 
 impl ConfirmAction {
@@ -62,6 +66,7 @@ impl ConfirmAction {
             ConfirmAction::Discard { path, .. } => tf!("丢弃 {} 的变更？", path),
             ConfirmAction::DropStash { id } => tf!("删除 {}？", id),
             ConfirmAction::DeleteSnapshot { .. } => tr("删除该快照？").to_string(),
+            ConfirmAction::RemoveWorktree { path } => tf!("删除 worktree {}？", path.display()),
         }
     }
     fn body(&self) -> String {
@@ -84,6 +89,9 @@ impl ConfirmAction {
                 tr("stash 提交对象在 git 保留期内仍可通过其 SHA 找回。").into()
             }
             ConfirmAction::DeleteSnapshot { .. } => tr("仅删除快照引用；对象在 git gc 之前仍存在。").into(),
+            ConfirmAction::RemoveWorktree { .. } => {
+                tr("等价 git worktree remove --force：目录会被删除，分支本身保留。").into()
+            }
         }
     }
 }
@@ -124,6 +132,7 @@ const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
     ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
     ("路径过滤（git log -- path）", "⌥⌘P", "Ctrl+Alt+P"),
     ("最近提交信息", "⌘⇧M", "Ctrl+Shift+M"),
+    ("Worktree 面板", "⌘⇧W", "Ctrl+Shift+W"),
     ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
     ("中文 / English", "⌘⇧L", "Ctrl+Shift+L"),
     ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
@@ -565,6 +574,19 @@ impl Workbench {
                 self.overlay = Some(Overlay::Stash);
                 self.refresh_stash_list(cx);
             }
+            ConfirmAction::RemoveWorktree { path } => {
+                let shown = path.display().to_string();
+                self.run_git(
+                    tf!("删除 worktree {}", shown),
+                    move |cli| {
+                        cli.worktree_remove(&path, true)?;
+                        Ok(String::new())
+                    },
+                    cx,
+                );
+                self.overlay = Some(Overlay::Worktrees);
+                self.refresh_worktrees(cx);
+            }
             ConfirmAction::DeleteSnapshot { refname } => {
                 self.run_git(
                     tr("删除快照").to_string(),
@@ -618,6 +640,7 @@ impl Workbench {
         let t = self.theme;
         let overlay = self.overlay.clone()?;
         let content: gpui::AnyElement = match &overlay {
+            Overlay::Worktrees => self.render_worktrees(cx).into_any_element(),
             Overlay::Rebase => self.render_rebase(cx).into_any_element(),
             Overlay::Recent => self.render_recent(cx).into_any_element(),
             Overlay::AiConnect => self.render_ai_connect(cx).into_any_element(),

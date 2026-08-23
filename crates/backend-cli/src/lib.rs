@@ -29,6 +29,15 @@ pub struct StashEntry {
 }
 
 #[derive(Clone, Debug)]
+pub struct WorktreeEntry {
+    pub path: PathBuf,
+    pub head: String,
+    pub branch: Option<String>,
+    pub bare: bool,
+    pub locked: bool,
+}
+
+#[derive(Clone, Debug)]
 pub struct FileHistoryEntry {
     pub sha: String,
     pub author: String,
@@ -735,6 +744,71 @@ impl GitCli {
             "interactive rebase (plan-driven)".into(),
         );
         self.expect_ok(out, "git rebase -i")
+    }
+
+    // ----- worktrees (M3) ---------------------------------------------------
+
+    pub fn worktree_list(&self) -> Result<Vec<WorktreeEntry>> {
+        let out = self.expect_ok(
+            self.run_read(&["worktree", "list", "--porcelain"])?,
+            "git worktree list",
+        )?;
+        let mut v: Vec<WorktreeEntry> = Vec::new();
+        let mut cur: Option<WorktreeEntry> = None;
+        for line in out.stdout_str().lines() {
+            if let Some(p) = line.strip_prefix("worktree ") {
+                if let Some(c) = cur.take() {
+                    v.push(c);
+                }
+                cur = Some(WorktreeEntry {
+                    path: PathBuf::from(p),
+                    head: String::new(),
+                    branch: None,
+                    bare: false,
+                    locked: false,
+                });
+            } else if let Some(c) = cur.as_mut() {
+                if let Some(h) = line.strip_prefix("HEAD ") {
+                    c.head = h.to_string();
+                } else if let Some(b) = line.strip_prefix("branch ") {
+                    c.branch = Some(b.trim_start_matches("refs/heads/").to_string());
+                } else if line == "bare" {
+                    c.bare = true;
+                } else if line.starts_with("locked") {
+                    c.locked = true;
+                }
+            }
+        }
+        if let Some(c) = cur.take() {
+            v.push(c);
+        }
+        Ok(v)
+    }
+
+    /// `git worktree add [-b <new_branch>] <path> [<commit-ish>]`
+    pub fn worktree_add(&self, path: &Path, branch: &str, create_branch: bool) -> Result<()> {
+        let p = path.to_string_lossy().to_string();
+        let mut args = vec!["worktree", "add"];
+        if create_branch {
+            args.push("-b");
+            args.push(branch);
+            args.push(&p);
+        } else {
+            args.push(&p);
+            args.push(branch);
+        }
+        self.expect_ok(self.run(&args)?, "git worktree add").map(|_| ())
+    }
+
+    pub fn worktree_remove(&self, path: &Path, force: bool) -> Result<()> {
+        let p = path.to_string_lossy().to_string();
+        let mut args = vec!["worktree", "remove"];
+        if force {
+            args.push("--force");
+        }
+        args.push(&p);
+        self.expect_ok(self.run(&args)?, "git worktree remove")
+            .map(|_| ())
     }
 
     /// Undo the last (unpushed) commit keeping its changes staged (05 §5).

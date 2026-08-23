@@ -59,6 +59,7 @@ actions!(
         OpenDateFilter,
         OpenPathFilter,
         OpenMessageHistory,
+        OpenWorktrees,
         OpenFileHistory,
         OpenBlame,
         OpenAiConnect,
@@ -182,6 +183,8 @@ pub struct Workbench {
     pub rebase: Option<crate::rebase::RebaseDraft>,
     pub conflict: Option<crate::conflict::ConflictView>,
     pub paths_input: Entity<InputState>,
+    pub worktrees: Vec<sluice_backend_cli::WorktreeEntry>,
+    pub worktree_branch: Entity<InputState>,
     pub settings: crate::recent::Settings,
     pub fetch_busy: bool,
     pub rebase_msg: Entity<InputState>,
@@ -230,6 +233,8 @@ impl Workbench {
             }
         })
         .detach();
+        let worktree_branch =
+            cx.new(|cx| InputState::new(window, cx).placeholder(tr("新分支名（如 feat/agent-2）")));
         let rebase_msg = cx.new(|cx| InputState::new(window, cx).placeholder(tr("新的提交信息")));
         cx.subscribe(&rebase_msg, |this, _, ev: &InputEvent, cx| {
             if matches!(ev, InputEvent::Change) {
@@ -331,6 +336,8 @@ impl Workbench {
             rebase: None,
             conflict: None,
             paths_input,
+            worktrees: Vec::new(),
+            worktree_branch,
             settings: settings.clone(),
             fetch_busy: false,
             rebase_msg,
@@ -1468,6 +1475,7 @@ impl Render for Workbench {
                 this.popup = Some((Popup::Users, gpui::point(px(620.), px(64.))));
                 cx.notify();
             }))
+            .on_action(cx.listener(|this, _: &OpenWorktrees, _, cx| this.open_worktrees(cx)))
             .on_action(cx.listener(|this, _: &OpenMessageHistory, _, cx| {
                 this.tab = Tab::Changes;
                 this.popup = Some((Popup::Messages, gpui::point(px(60.), px(420.))));
