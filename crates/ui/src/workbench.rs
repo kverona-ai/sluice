@@ -51,6 +51,7 @@ actions!(
         OpenSnapshots,
         OpenSettings,
         OpenPush,
+        ToggleTheme,
         StageAll,
         UnstageAll,
         ToggleSelected,
@@ -487,6 +488,25 @@ impl Workbench {
             self.tab = Tab::Log;
             cx.notify();
         }
+    }
+
+    /// Switch between the light and dark Broadsheet palettes (prototype THEMES).
+    pub fn toggle_theme(&mut self, cx: &mut Context<Self>) {
+        self.theme = if self.theme.is_dark {
+            Theme::light()
+        } else {
+            Theme::dark()
+        };
+        crate::sync_component_theme(cx, &self.theme);
+        self.toast(
+            if self.theme.is_dark {
+                "已切换到深色主题"
+            } else {
+                "已切换到浅色主题"
+            },
+            cx,
+        );
+        cx.notify();
     }
 
     /// Toast for controls whose feature lands in a later milestone — never a dead click.
@@ -1072,6 +1092,7 @@ impl Render for Workbench {
             .on_action(cx.listener(|this, _: &OpenSnapshots, _, cx| this.open_snapshots(cx)))
             .on_action(cx.listener(|this, _: &OpenSettings, _, cx| this.open_settings(cx)))
             .on_action(cx.listener(|this, _: &OpenPush, _, cx| this.open_push(cx)))
+            .on_action(cx.listener(|this, _: &ToggleTheme, _, cx| this.toggle_theme(cx)))
             .on_action(cx.listener(|this, _: &NextHunk, _, cx| this.jump_hunk(1, cx)))
             .on_action(cx.listener(|this, _: &PrevHunk, _, cx| this.jump_hunk(-1, cx)))
             .on_action(cx.listener(|this, _: &ToggleSideBySide, _, cx| {

@@ -1221,6 +1221,25 @@ impl Workbench {
                             .flex()
                             .flex_col()
                             .gap(px(6.))
+                            .child(section_label(&t, "外观"))
+                            .child(
+                                div()
+                                    .id("theme-toggle")
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .text_size(px(12.5))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, _, cx| this.toggle_theme(cx)))
+                                    .child(checkbox(&t, t.is_dark, false))
+                                    .child("深色主题（⌘⇧T 随时切换；浅色为默认）"),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.))
                             .child(section_label(&t, "隐私"))
                             .child(
                                 div()

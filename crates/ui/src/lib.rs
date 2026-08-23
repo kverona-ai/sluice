@@ -68,6 +68,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("ctrl-7", workbench::OpenSnapshots, ctx),
         KeyBinding::new("cmd-,", workbench::OpenSettings, ctx),
         KeyBinding::new("cmd-shift-k", workbench::OpenPush, ctx),
+        KeyBinding::new("cmd-shift-t", workbench::ToggleTheme, ctx),
+        KeyBinding::new("ctrl-shift-t", workbench::ToggleTheme, ctx),
         KeyBinding::new("ctrl-shift-k", workbench::OpenPush, ctx),
         KeyBinding::new("alt-9", workbench::ShowLog, ctx),
         KeyBinding::new("alt-0", workbench::ShowChanges, ctx),
