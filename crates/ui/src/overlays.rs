@@ -1630,7 +1630,116 @@ impl Workbench {
                                     .text_size(px(11.5))
                                     .text_color(t.faint)
                                     .child(tr("上报内容绝不包含仓库路径、文件名、提交信息或 diff。")),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .text_size(px(11.5))
+                                    .text_color(t.faint)
+                                    .child(tf!(
+                                        "端点：{} · 队列 {} 条",
+                                        sluice_bridge::telemetry::endpoint(Some(
+                                            &self.settings.telemetry_endpoint
+                                        ))
+                                        .unwrap_or_else(|| tr("未配置（仅本地队列）").to_string()),
+                                        sluice_bridge::telemetry::queued()
+                                    ))
+                                    .child(
+                                        div()
+                                            .id("tele-flush")
+                                            .px(px(7.))
+                                            .py(px(1.))
+                                            .rounded(px(4.))
+                                            .text_color(t.cyan_deep)
+                                            .cursor_pointer()
+                                            .hover(move |s| s.bg(t.cyan_16))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                let ep = this.settings.telemetry_endpoint.clone();
+                                                match sluice_bridge::telemetry::flush(Some(&ep)) {
+                                                    Ok(0) => {
+                                                        this.toast(tr("没有可发送的事件或未配置端点"), cx)
+                                                    }
+                                                    Ok(n) => this.toast(tf!("已发送 {} 条事件", n), cx),
+                                                    Err(e) => {
+                                                        this.toast(tf!("发送失败：{}", format!("{e:#}")), cx)
+                                                    }
+                                                }
+                                            }))
+                                            .child(tr("立即发送")),
+                                    ),
                             ),
+                    )
+                    .child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap(px(6.))
+                            .child(section_label(&t, tr("更新")))
+                            .child(
+                                div()
+                                    .id("upd-toggle")
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .text_size(px(12.5))
+                                    .cursor_pointer()
+                                    .on_click(cx.listener(|this, _, _, cx| {
+                                        this.settings.check_updates = !this.settings.check_updates;
+                                        this.save_settings();
+                                        cx.notify();
+                                    }))
+                                    .child(checkbox(&t, self.settings.check_updates, false))
+                                    .child(tr("启动时检查新版本（仅发送版本号到 GitHub Releases）")),
+                            )
+                            .child(
+                                div()
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(8.))
+                                    .text_size(px(12.))
+                                    .child(match &self.update_available {
+                                        Some((tag, _)) => tf!("新版本 {} 可用", tag),
+                                        None if self.update_checked => {
+                                            tf!("已是最新（{}）", env!("CARGO_PKG_VERSION"))
+                                        }
+                                        None => tf!("当前 {}", env!("CARGO_PKG_VERSION")),
+                                    })
+                                    .child(
+                                        div()
+                                            .id("upd-check")
+                                            .px(px(7.))
+                                            .py(px(1.))
+                                            .rounded(px(4.))
+                                            .text_size(px(11.5))
+                                            .text_color(t.cyan_deep)
+                                            .cursor_pointer()
+                                            .hover(move |s| s.bg(t.cyan_16))
+                                            .on_click(
+                                                cx.listener(|this, _, _, cx| this.check_updates_now(cx)),
+                                            )
+                                            .child(tr("立即检查")),
+                                    )
+                                    .when_some(self.update_available.clone(), |d, (_, url)| {
+                                        d.child(
+                                            div()
+                                                .id("upd-open")
+                                                .px(px(7.))
+                                                .py(px(1.))
+                                                .rounded(px(4.))
+                                                .text_size(px(11.5))
+                                                .bg(t.cyan)
+                                                .text_color(t.surface)
+                                                .cursor_pointer()
+                                                .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&url)))
+                                                .child(tr("下载")),
+                                        )
+                                    }),
+                            )
+                            .child(div().text_size(px(11.5)).text_color(t.faint).child(tr(
+                                "下载后替换 .app / exe 即可；签名与自动替换随 public beta 提供。",
+                            ))),
                     )
                     .child(
                         div()

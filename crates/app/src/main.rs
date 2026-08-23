@@ -62,6 +62,8 @@ enum Command {
     SeqEditor { file: Option<PathBuf> },
     /// Export a diagnostics bundle (05 §9.2).
     Diagnostics,
+    /// Check GitHub Releases for a newer version (version number only).
+    Update,
 }
 
 #[derive(Subcommand, Debug)]
@@ -155,6 +157,13 @@ fn main() -> Result<()> {
             Some(f) => sluice_bridge::rebase::run_seq_editor(&f),
             None => anyhow::bail!("seq-editor needs the todo file path"),
         },
+        Some(Command::Update) => {
+            match sluice_bridge::update::check_latest(env!("CARGO_PKG_VERSION"))? {
+                Some(r) => println!("new version {} available: {}", r.tag_name, r.html_url),
+                None => println!("sluice {} is up to date", env!("CARGO_PKG_VERSION")),
+            }
+            Ok(())
+        }
         Some(Command::Diagnostics) => {
             let path = resolve_path(cli.path).unwrap_or_else(|_| PathBuf::from("."));
             let mut out = String::new();
@@ -309,6 +318,7 @@ fn dump_log(path: Option<PathBuf>, limit: usize, topo: bool) -> Result<()> {
 }
 
 fn run_app(path: Option<PathBuf>) -> Result<()> {
+    sluice_bridge::telemetry::install_crash_hook();
     let path = resolve_path(path)?;
     if let Ok(exe) = std::env::current_exe() {
         // SAFETY: set before any thread is spawned; read later by GitCli::command.

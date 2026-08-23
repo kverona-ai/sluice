@@ -186,6 +186,8 @@ pub struct Workbench {
     pub worktrees: Vec<sluice_backend_cli::WorktreeEntry>,
     pub worktree_branch: Entity<InputState>,
     pub settings: crate::recent::Settings,
+    pub update_available: Option<(String, String)>,
+    pub update_checked: bool,
     pub fetch_busy: bool,
     pub rebase_msg: Entity<InputState>,
     pub provenance_cache: Option<(Oid, Vec<sluice_bridge::provenance::SessionMatch>)>,
@@ -339,6 +341,8 @@ impl Workbench {
             worktrees: Vec::new(),
             worktree_branch,
             settings: settings.clone(),
+            update_available: None,
+            update_checked: false,
             fetch_busy: false,
             rebase_msg,
             provenance_cache: None,
@@ -363,11 +367,71 @@ impl Workbench {
             crate::i18n::Lang::Zh
         });
         this.apply_keymap(cx);
+        sluice_bridge::telemetry::set_enabled(this.telemetry);
+        sluice_bridge::telemetry::record(
+            "app_start",
+            serde_json::json!({"lang": this.settings.lang, "dark": this.settings.dark}),
+        );
         this.start_watcher(cx);
         this.reload_log(cx);
         this.reload_changes(cx);
         this.start_background_fetch(cx);
+        this.start_update_check(cx);
         this
+    }
+
+    /// Startup update check (delayed 8 s, opt-out in settings); the result is shown
+    /// as a toast and kept for the Settings panel.
+    pub fn start_update_check(&mut self, cx: &mut Context<Self>) {
+        if !self.settings.check_updates {
+            return;
+        }
+        cx.spawn(async move |this, cx| {
+            cx.background_executor()
+                .timer(std::time::Duration::from_secs(8))
+                .await;
+            let res = cx
+                .background_spawn(
+                    async move { sluice_bridge::update::check_latest(env!("CARGO_PKG_VERSION")) },
+                )
+                .await;
+            this.update(cx, |this, cx| match res {
+                Ok(Some(rel)) => {
+                    this.update_available = Some((rel.tag_name.clone(), rel.html_url.clone()));
+                    this.toast(tf!("新版本 {} 可用（设置里可下载）", rel.tag_name), cx);
+                }
+                Ok(None) => this.update_checked = true,
+                Err(e) => tracing::debug!("update check: {e:#}"),
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    pub fn check_updates_now(&mut self, cx: &mut Context<Self>) {
+        cx.spawn(async move |this, cx| {
+            let res = cx
+                .background_spawn(
+                    async move { sluice_bridge::update::check_latest(env!("CARGO_PKG_VERSION")) },
+                )
+                .await;
+            this.update(cx, |this, cx| {
+                match res {
+                    Ok(Some(rel)) => {
+                        this.update_available = Some((rel.tag_name.clone(), rel.html_url.clone()));
+                        this.toast(tf!("新版本 {} 可用（设置里可下载）", rel.tag_name), cx);
+                    }
+                    Ok(None) => {
+                        this.update_checked = true;
+                        this.toast(tr("已是最新版本"), cx);
+                    }
+                    Err(e) => this.toast(tf!("检查更新失败：{}", format!("{e:#}")), cx),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
     }
 
     /// Bind the selected preset + `~/.sluice/keymap.json` overrides (later bindings win).
@@ -432,6 +496,7 @@ impl Workbench {
     }
 
     pub fn save_settings(&mut self) {
+        sluice_bridge::telemetry::set_enabled(self.telemetry);
         self.settings.dark = self.theme.is_dark;
         self.settings.telemetry = self.telemetry;
         self.settings.rail_expanded = self.rail_expanded;

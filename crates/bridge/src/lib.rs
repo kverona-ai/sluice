@@ -10,3 +10,5 @@ pub mod ipc;
 pub mod mcp;
 pub mod provenance;
 pub mod rebase;
+pub mod telemetry;
+pub mod update;

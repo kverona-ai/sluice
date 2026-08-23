@@ -287,6 +287,10 @@ pub struct Settings {
     pub lang: String,
     /// "idea" (default) or "vscode".
     pub keymap: String,
+    /// Check GitHub Releases for a newer version at startup (version number only).
+    pub check_updates: bool,
+    /// Telemetry endpoint (empty = queue locally only).
+    pub telemetry_endpoint: String,
 }
 
 impl Default for Settings {
@@ -298,6 +302,8 @@ impl Default for Settings {
             rail_expanded: false,
             lang: "zh".into(),
             keymap: "idea".into(),
+            check_updates: true,
+            telemetry_endpoint: String::new(),
         }
     }
 }
