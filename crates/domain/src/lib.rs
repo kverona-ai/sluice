@@ -33,6 +33,8 @@ pub struct Repo {
     pub reader: Arc<dyn GitReader>,
     /// None for bare repositories (no working tree → no write path).
     pub cli: Option<Arc<GitCli>>,
+    /// Present for jujutsu workspaces when the `jj` binary is available (05 §8).
+    pub jj: Option<Arc<sluice_backend_cli::jj::JjCli>>,
     pub console: Console,
     pub info: RepoInfo,
 }
@@ -50,9 +52,16 @@ impl Repo {
             )?)),
             None => None,
         };
+        let jj = match (&info.workdir, info.vcs.is_jj()) {
+            (Some(wd), true) => sluice_backend_cli::jj::JjCli::new(wd.clone(), console.clone())
+                .ok()
+                .map(Arc::new),
+            _ => None,
+        };
         Ok(Repo {
             reader: Arc::new(reader),
             cli,
+            jj,
             console,
             info,
         })
@@ -269,6 +278,22 @@ pub fn diff_range_file(
     Ok(d)
 }
 
+/// jujutsu working-copy diff of one path: `@-` (parent) vs the file on disk.
+pub fn diff_work_file_jj(
+    jj: &sluice_backend_cli::jj::JjCli,
+    path: &str,
+    old_path: Option<&str>,
+    opts: &DiffOptions,
+) -> Result<FileDiff> {
+    let old = jj.file_show("@-", old_path.unwrap_or(path)).unwrap_or_default();
+    let new = std::fs::read(jj.workdir().join(path)).unwrap_or_default();
+    let mut d = diff_bytes(&old, &new, opts);
+    d.old_path = Some(old_path.unwrap_or(path).to_string());
+    d.new_path = Some(path.to_string());
+    attach_syntax(&mut d, path, &old, &new);
+    Ok(d)
+}
+
 /// Diff of a working-tree path: `staged` = index vs HEAD, otherwise worktree vs index.
 pub fn diff_work_file(
     reader: &dyn GitReader,
@@ -301,6 +326,43 @@ pub struct ChangesSnapshot {
 }
 
 impl ChangesSnapshot {
+    /// jujutsu: the working-copy commit's diff against its parent; conflicts are first-class
+    /// (jj keeps them in the commit), no staging area.
+    pub fn load_jj(jj: &sluice_backend_cli::jj::JjCli) -> Result<Self> {
+        let t0 = Instant::now();
+        let wc = jj.working_copy()?;
+        let mut entries = jj.summary()?;
+        for e in entries.iter_mut() {
+            if wc.conflicts.iter().any(|c| c == &e.path) {
+                e.conflict = Some("jj".into());
+            }
+        }
+        for c in &wc.conflicts {
+            if !entries.iter().any(|e| &e.path == c) {
+                entries.push(StatusEntry {
+                    path: c.clone(),
+                    old_path: None,
+                    staged: None,
+                    unstaged: Some(ChangeKind::Modified),
+                    untracked: false,
+                    conflict: Some("jj".into()),
+                    submodule: false,
+                });
+            }
+        }
+        Ok(Self {
+            status: WorkStatus {
+                entries,
+                branch: Some(format!("@ {}", wc.change_id)),
+                upstream: None,
+                ahead: 0,
+                behind: 0,
+                in_progress: None,
+            },
+            load_ms: t0.elapsed().as_millis(),
+        })
+    }
+
     pub fn load(cli: &GitCli) -> Result<Self> {
         let t0 = Instant::now();
         let status = cli.status().context("reading working-tree status")?;

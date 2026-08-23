@@ -226,7 +226,9 @@ impl Workbench {
             .map(|d| (d.additions(), d.deletions(), d.hunks.len()))
             .unwrap_or((0, 0, 0));
         let origin = if work {
-            if dv.stageable {
+            if self.repo.jj.is_some() {
+                tr("工作副本 @ vs 父提交 @-")
+            } else if dv.stageable {
                 tr("工作区 vs 暂存区")
             } else {
                 tr("暂存区 vs HEAD")

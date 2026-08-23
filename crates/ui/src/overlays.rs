@@ -166,17 +166,28 @@ impl Workbench {
         .detach();
     }
 
-    pub(crate) fn open_snapshots(&mut self, cx: &mut Context<Self>) {
+    pub fn open_snapshots(&mut self, cx: &mut Context<Self>) {
         let Some(cli) = self.repo.cli.clone() else {
             self.toast("裸仓库没有工作区", cx);
             return;
         };
+        let jj = self.repo.jj.clone();
         cx.spawn(async move |this, cx| {
-            let res = cx.background_spawn(async move { cli.snapshot_list() }).await;
+            let res = cx
+                .background_spawn(async move {
+                    let snaps = cli.snapshot_list()?;
+                    let ops = match jj {
+                        Some(jj) => jj.op_log(30).unwrap_or_default(),
+                        None => Vec::new(),
+                    };
+                    anyhow::Ok((snaps, ops))
+                })
+                .await;
             this.update(cx, |this, cx| {
                 match res {
-                    Ok(v) => {
+                    Ok((v, ops)) => {
                         this.snapshots = v;
+                        this.jj_ops = ops;
                         this.overlay = Some(Overlay::Snapshots);
                     }
                     Err(e) => this.toast(tf!("读取快照失败：{}", format!("{e:#}")), cx),
@@ -186,6 +197,27 @@ impl Workbench {
             .ok();
         })
         .detach();
+    }
+
+    /// jujutsu operation log actions (time machine, 05 §8): undo / restore.
+    pub(crate) fn jj_op_action(&mut self, restore: Option<String>, cx: &mut Context<Self>) {
+        let Some(jj) = self.repo.jj.clone() else { return };
+        let what = match &restore {
+            Some(id) => tf!("jj op restore {}", id),
+            None => "jj undo".to_string(),
+        };
+        self.overlay = None;
+        self.run_git(
+            what,
+            move |_cli| {
+                let out = match restore {
+                    Some(id) => jj.op_restore(&id)?,
+                    None => jj.undo()?,
+                };
+                Ok(out.lines().next().unwrap_or("").trim().to_string())
+            },
+            cx,
+        );
     }
 
     /// Close the topmost transient surface. Returns true when something closed.
@@ -1337,6 +1369,89 @@ impl Workbench {
     fn render_snapshots(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let snaps = self.snapshots.clone();
+        let ops = self.jj_ops.clone();
+        let jj_section: Option<gpui::AnyElement> = (!ops.is_empty()).then(|| {
+            let mut list = div().flex().flex_col().px(px(8.)).py(px(4.));
+            for (i, op) in ops.iter().take(12).enumerate() {
+                let id = op.id.clone();
+                list = list.child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .px(px(8.))
+                        .py(px(4.))
+                        .rounded(px(6.))
+                        .text_size(px(12.))
+                        .hover(move |s| s.bg(t.ink_05))
+                        .child(
+                            div()
+                                .font_family(FONT_MONO)
+                                .text_size(px(11.))
+                                .text_color(t.cyan_deep)
+                                .child(op.id.clone()),
+                        )
+                        .child(div().flex_1().min_w_0().truncate().child(op.description.clone()))
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .text_color(t.faint)
+                                .child(op.time.clone()),
+                        )
+                        .when(op.current, |d| {
+                            d.child(div().text_size(px(11.)).text_color(t.faint).child(tr("当前")))
+                        })
+                        .when(!op.current, |d| {
+                            d.child(
+                                div()
+                                    .id(("jj-op", i))
+                                    .px(px(7.))
+                                    .py(px(2.))
+                                    .rounded(px(4.))
+                                    .text_size(px(11.5))
+                                    .text_color(t.cyan_deep)
+                                    .cursor_pointer()
+                                    .hover(move |s| s.bg(t.cyan_16))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        this.jj_op_action(Some(id.clone()), cx)
+                                    }))
+                                    .child(tr("恢复到此")),
+                            )
+                        }),
+                );
+            }
+            div()
+                .flex()
+                .flex_col()
+                .border_b_1()
+                .border_color(t.line_soft)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .px(px(16.))
+                        .pt(px(8.))
+                        .child(section_label(&t, tr("jj 操作日志（每一步都可回溯）")))
+                        .child(div().ml_auto())
+                        .child(
+                            div()
+                                .id("jj-undo")
+                                .px(px(9.))
+                                .py(px(2.))
+                                .rounded(px(4.))
+                                .border_1()
+                                .border_color(t.line)
+                                .text_size(px(11.5))
+                                .cursor_pointer()
+                                .hover(move |s| s.bg(t.ink_05))
+                                .on_click(cx.listener(|this, _, _, cx| this.jj_op_action(None, cx)))
+                                .child("jj undo"),
+                        ),
+                )
+                .child(list)
+                .into_any_element()
+        });
         let mut list = div()
             .id("snap-list")
             .max_h(px(340.))
@@ -1439,6 +1554,7 @@ impl Workbench {
                 tf!("{} 个快照 · refs/sluice/snapshots", snaps.len()),
                 cx,
             ))
+            .children(jj_section)
             .child(
                 div()
                     .flex()

@@ -81,6 +81,7 @@ rebuilt for the agentic era:
 | **Console** | every git command with duration, exit code and stderr; verbose mode reveals the read path too |
 | **Syntax-highlighted diffs** | tree-sitter grammars for 14 common languages, light & dark palettes |
 | **Dock layout** | drag-resizable panes, Console docks at the bottom (`⌥⌘6`); keymap presets (IDEA / VS Code) + `keymap.json` overrides; worktrees panel (`⌘⇧W`) |
+| **jujutsu repositories** | `.jj` workspaces open with the same UI: working-copy diff, `jj commit` / `describe`, change ids, op log as the time machine |
 | **Chinese / English UI** | `⌘⇧L` toggles the language (persisted); dark / light theme `⌘⇧T` |
 | **Keyboard-first** | IDEA-style keymap: `⌘9` Log · `⌘0` Changes · `⌘B` branches · `⌘5` stash · `⌘K` commit panel · `⌘↩` commit · `Space` stage · full list in Settings (`⌘,`) |
 
@@ -181,7 +182,7 @@ IDEA-style preset (`Ctrl` instead of `⌘` on Windows/Linux): `↑/↓/PgUp/PgDn
   propose-and-confirm queue, session provenance, askpass, settings / keymap / update check /
   opt-in telemetry — public beta packaging (signing accounts) is the remaining step
 - ⏭ **M5 — Mobile companions**: review & approve from iOS / Android over the same Rust core
-- ⏭ **M6 — Extensions**: GitHub / GitLab PR review, jujutsu (jj) backend
+- ✅ **M6 — Extensions**: GitHub / GitLab PR review tab, jujutsu (jj) backend
 
 ## Contributing
 

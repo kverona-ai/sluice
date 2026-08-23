@@ -126,9 +126,7 @@ pub enum Vcs {
     #[default]
     Git,
     /// `.jj` present; `colocated` = a `.git` directory sits next to it.
-    Jujutsu {
-        colocated: bool,
-    },
+    Jujutsu { colocated: bool },
 }
 
 impl Vcs {

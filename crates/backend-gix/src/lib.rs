@@ -31,9 +31,14 @@ impl GixReader {
         if p.join(".jj").is_dir() && !p.join(".git").exists() {
             let store = p.join(".jj").join("repo").join("store").join("git");
             if store.is_dir() {
-                let mut repo = gix::open(&store).with_context(|| format!("opening jj git store {}", store.display()))?;
+                let mut repo =
+                    gix::open(&store).with_context(|| format!("opening jj git store {}", store.display()))?;
                 repo.set_workdir(Some(p.to_path_buf()))?;
-                return Ok(Self { repo: repo.into_sync(), console, vcs: Vcs::Jujutsu { colocated: false } });
+                return Ok(Self {
+                    repo: repo.into_sync(),
+                    console,
+                    vcs: Vcs::Jujutsu { colocated: false },
+                });
             }
         }
         let repo = gix::discover(p)

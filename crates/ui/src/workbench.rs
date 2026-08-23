@@ -176,6 +176,8 @@ pub struct Workbench {
     pub stash_untracked: bool,
     pub stashes: Vec<StashEntry>,
     pub snapshots: Vec<SnapshotEntry>,
+    pub jj_ops: Vec<sluice_backend_cli::jj::JjOp>,
+    pub jj_change_ids: std::collections::HashMap<Oid, String>,
     pub push_lease: bool,
     pub push_upstream: bool,
     pub telemetry: bool,
@@ -344,6 +346,8 @@ impl Workbench {
             stash_untracked: true,
             stashes: Vec::new(),
             snapshots: Vec::new(),
+            jj_ops: Vec::new(),
+            jj_change_ids: std::collections::HashMap::new(),
             push_lease: false,
             push_upstream: false,
             telemetry: false,
@@ -735,10 +739,16 @@ impl Workbench {
 
     pub fn reload_changes(&mut self, cx: &mut Context<Self>) {
         let Some(cli) = self.repo.cli.clone() else { return };
+        let jj = self.repo.jj.clone();
         self.changes_loading = true;
         cx.spawn(async move |this, cx| {
             let res = cx
-                .background_spawn(async move { ChangesSnapshot::load(&cli) })
+                .background_spawn(async move {
+                    match jj {
+                        Some(jj) => ChangesSnapshot::load_jj(&jj),
+                        None => ChangesSnapshot::load(&cli),
+                    }
+                })
                 .await;
             this.update(cx, |this, cx| {
                 this.changes_loading = false;
@@ -1155,7 +1165,25 @@ impl Workbench {
                                     .text_size(px(11.5))
                                     .text_color(t.muted)
                                     .child(format!("{repo_name} — {branch}")),
-                            ),
+                            )
+                            .when(self.repo.info.vcs.is_jj(), |d| {
+                                d.child(
+                                    div()
+                                        .px(px(5.))
+                                        .rounded(px(4.))
+                                        .bg(t.cyan_16)
+                                        .text_size(px(10.5))
+                                        .text_color(t.cyan_deep)
+                                        .child(
+                                            if matches!(self.repo.info.vcs, Vcs::Jujutsu { colocated: true })
+                                            {
+                                                "jj · colocated"
+                                            } else {
+                                                "jj"
+                                            },
+                                        ),
+                                )
+                            }),
                     ),
             )
             .when(is_mac, |d| d.child(div().w(px(64.)).flex_none()))

@@ -91,6 +91,13 @@ impl Workbench {
     }
 
     pub(crate) fn stage_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
+        if self.repo.jj.is_some() {
+            self.toast(
+                tr("jj 没有暂存区：工作副本的全部变更随 jj commit 落地；要拆分请用 jj split"),
+                cx,
+            );
+            return;
+        }
         if paths.is_empty() {
             return;
         }
@@ -107,6 +114,13 @@ impl Workbench {
     }
 
     pub(crate) fn unstage_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
+        if self.repo.jj.is_some() {
+            self.toast(
+                tr("jj 没有暂存区：工作副本的全部变更随 jj commit 落地；要拆分请用 jj split"),
+                cx,
+            );
+            return;
+        }
         if paths.is_empty() {
             return;
         }
@@ -201,6 +215,7 @@ impl Workbench {
             return;
         }
         self.conflict = None;
+        let jj_for_diff = self.repo.jj.clone();
         let reader = self.repo.reader.clone();
         let opts = self.diff_opts;
         let same = self.work_file.as_ref() == Some(&wf);
@@ -217,7 +232,7 @@ impl Workbench {
             binary: false,
         };
         let mut dv = DiffView::loading(wf.path.clone(), change);
-        dv.stageable = !wf.staged;
+        dv.stageable = !wf.staged && self.repo.jj.is_none();
         if let Some(prev) = &self.work_diff
             && prev.title == wf.path
         {
@@ -227,8 +242,17 @@ impl Workbench {
         cx.notify();
         cx.spawn(async move |this, cx| {
             let wf2 = wf.clone();
+            let jj = jj_for_diff.clone();
             let res = cx
                 .background_spawn(async move {
+                    if let Some(jj) = jj {
+                        return sluice_domain::diff_work_file_jj(
+                            &jj,
+                            &wf2.path,
+                            wf2.old_path.as_deref(),
+                            &opts,
+                        );
+                    }
                     sluice_domain::diff_work_file(
                         &*reader,
                         &wf2.path,
@@ -369,9 +393,23 @@ impl Workbench {
         let amend = self.amend;
         self.commit_busy = true;
         cx.notify();
+        let jj = self.repo.jj.clone();
         cx.spawn(async move |this, cx| {
             let res = cx
                 .background_spawn(async move {
+                    if let Some(jj) = jj {
+                        // jujutsu: the working copy is the commit — describe (amend) or commit it.
+                        if opts.amend {
+                            jj.describe(&message)?;
+                        } else {
+                            jj.commit(&message)?;
+                        }
+                        if push {
+                            jj.git_push()?;
+                        }
+                        let wc = jj.working_copy()?;
+                        return anyhow::Ok(wc.parent_change_id);
+                    }
                     let sha = cli.commit(&message, &opts)?;
                     if push {
                         cli.push(None, None, false, false)?;
@@ -612,6 +650,18 @@ impl Workbench {
                             }),
                     ),
             );
+        } else if self.repo.jj.is_some() {
+            pane = pane.child(
+                div()
+                    .flex_none()
+                    .border_t_1()
+                    .border_color(t.line)
+                    .px(px(12.))
+                    .py(px(9.))
+                    .text_size(px(12.5))
+                    .text_color(t.muted)
+                    .child(tr("jj：工作副本 @ 本身就是提交——jj commit 落地全部变更；拆分用 jj split，合并到父提交用 jj squash")),
+            );
         } else {
             let path = self
                 .work_file
@@ -657,6 +707,7 @@ impl Workbench {
 
     fn render_change_tree(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
+        let is_jj = self.repo.jj.is_some();
         let changes = self.changes.clone();
         let open = self.work_file.clone();
         let staged_n = changes.as_ref().map(|c| c.status.staged().count()).unwrap_or(0);
@@ -725,7 +776,7 @@ impl Workbench {
                                     Group::Staged => this.unstage_paths(paths.clone(), cx),
                                     _ => this.stage_paths(paths.clone(), cx),
                                 }))
-                                .child(checkbox(&t, all_on, mixed))
+                                .when(!is_jj, |d| d.child(checkbox(&t, all_on, mixed)))
                                 .child(icon_f(
                                     "folder",
                                     px(14.),
@@ -811,16 +862,19 @@ impl Workbench {
                                     cx,
                                 )
                             }))
-                            .child(
-                                div()
-                                    .id(("wfchk", i))
-                                    .cursor_pointer()
-                                    .on_click(cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
-                                        cx.stop_propagation();
-                                        this.toggle_entry(g, path.clone(), cx);
-                                    }))
-                                    .child(checkbox(&t, is_staged_row, false)),
-                            )
+                            .when(!is_jj, |d| {
+                                let path = path.clone();
+                                d.child(
+                                    div()
+                                        .id(("wfchk", i))
+                                        .cursor_pointer()
+                                        .on_click(cx.listener(move |this, _: &gpui::ClickEvent, _, cx| {
+                                            cx.stop_propagation();
+                                            this.toggle_entry(g, path.clone(), cx);
+                                        }))
+                                        .child(checkbox(&t, is_staged_row, false)),
+                                )
+                            })
                             .child(
                                 div()
                                     .w(px(13.))
@@ -933,6 +987,7 @@ impl Workbench {
             .map(|l| l.chars().count())
             .unwrap_or(0);
         let busy = self.commit_busy;
+        let is_jj = self.repo.jj.is_some();
         let opt = |id: &'static str, on: bool, label: &'static str, warn: Option<String>| {
             div()
                 .id(id)
@@ -1103,7 +1158,11 @@ impl Workbench {
                                     .hover(move |s| s.bg(t.ink_05))
                                     .when(busy, |d| d.opacity(0.5))
                                     .on_click(cx.listener(|this, _, _, cx| this.do_commit(true, cx)))
-                                    .child("Commit & Push"),
+                                    .child(if is_jj {
+                                        "jj commit + git push"
+                                    } else {
+                                        "Commit & Push"
+                                    }),
                             )
                             .child(
                                 div()
@@ -1118,7 +1177,13 @@ impl Workbench {
                                     .hover(move |s| s.bg(t.cyan_deep))
                                     .when(busy, |d| d.opacity(0.5))
                                     .on_click(cx.listener(|this, _, _, cx| this.do_commit(false, cx)))
-                                    .child(if busy { tr("执行中…") } else { "Commit" }),
+                                    .child(if busy {
+                                        tr("执行中…")
+                                    } else if is_jj {
+                                        "jj commit"
+                                    } else {
+                                        "Commit"
+                                    }),
                             ),
                     ),
             )

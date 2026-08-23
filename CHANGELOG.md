@@ -6,6 +6,11 @@ All notable changes to Sluice are recorded here. The format follows
 ## [Unreleased]
 
 ### Added
+- **jujutsu backend** (05 §8 capability mapping): `.jj` detected (colocated or standalone —
+  the git store is opened through gix), working-copy changes via `jj diff --summary` /
+  `jj file show`, no staging UI, commit = `jj commit` / `jj describe`, push via `jj git push`,
+  change id next to the commit id, operation log in the time machine with `jj undo` /
+  `jj op restore`, conflicts surfaced from `jj resolve --list`.
 - **PR / MR review tab** (`⌘8`): open PRs from the logged-in `gh` / `glab` (GitHub / GitLab
   detected from `origin`), details with checks / decision / discussion, PR head fetched locally
   (`refs/pull/N/head` / `refs/merge-requests/N/head`) and diffed with Sluice's own viewer,

@@ -7,6 +7,7 @@
 //! login-shell PATH resolution GUI processes need on macOS / Linux.
 
 pub mod env;
+pub mod jj;
 pub mod status;
 
 use std::path::{Path, PathBuf};

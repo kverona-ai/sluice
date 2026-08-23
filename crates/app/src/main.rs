@@ -450,6 +450,9 @@ fn run_app(path: Option<PathBuf>) -> Result<()> {
                             if shot_open {
                                 w.move_work_file(1, cx);
                             }
+                            if std::env::var("SLUICE_SCREENSHOT_OVERLAY").as_deref() == Ok("snapshots") {
+                                w.open_snapshots(cx);
+                            }
                             cx.notify();
                         });
                         window.refresh();

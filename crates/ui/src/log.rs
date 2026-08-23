@@ -5,6 +5,7 @@ use crate::i18n::tr;
 use std::sync::Arc;
 
 use chrono::{DateTime, Datelike, FixedOffset, Local, Timelike};
+use gpui::AppContext as _;
 use gpui::prelude::FluentBuilder;
 use gpui::{
     BorderStyle, Bounds, Context, Corners, Edges, InteractiveElement, IntoElement, ParentElement,
@@ -1161,6 +1162,7 @@ impl Workbench {
                     .flex()
                     .flex_col()
                     .gap(px(4.))
+                    .children(self.jj_change_row(&c.id, &t, cx))
                     .child(row("Hash", {
                         let full = c.id.to_string();
                         div()
@@ -1495,4 +1497,38 @@ fn paint_graph_row(
         lane_color,
         BorderStyle::default(),
     ));
+}
+
+impl Workbench {
+    /// jujutsu: show the change id next to the commit id (fetched lazily per commit).
+    fn jj_change_row(&mut self, id: &Oid, t: &Theme, cx: &mut Context<Self>) -> Option<impl IntoElement> {
+        let jj = self.repo.jj.clone()?;
+        let value = match self.jj_change_ids.get(id) {
+            Some(v) => v.clone(),
+            None => {
+                self.jj_change_ids.insert(id.clone(), "…".into());
+                let sha = id.to_string();
+                let key = id.clone();
+                cx.spawn(async move |this, cx| {
+                    let res = cx.background_spawn(async move { jj.change_id_of(&sha) }).await;
+                    this.update(cx, |this, cx| {
+                        this.jj_change_ids.insert(key, res.unwrap_or_else(|_| "—".into()));
+                        cx.notify();
+                    })
+                    .ok();
+                })
+                .detach();
+                "…".into()
+            }
+        };
+        Some(
+            div()
+                .flex()
+                .items_baseline()
+                .gap(px(10.))
+                .text_size(px(12.))
+                .child(div().w(px(56.)).flex_none().text_color(t.faint).child("Change"))
+                .child(div().font_family(FONT_MONO).text_color(t.mag_deep).child(value)),
+        )
+    }
 }
