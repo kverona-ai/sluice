@@ -223,7 +223,28 @@ pub fn diff_commit_file(
     let mut d = diff_bytes(&old, &new, opts);
     d.old_path = Some(old_path.unwrap_or(path).to_string());
     d.new_path = Some(path.to_string());
+    attach_syntax(&mut d, path, &old, &new);
     Ok(d)
+}
+
+/// Syntax spans for both sides when a grammar matches (05 §4); large files stay plain.
+fn attach_syntax(d: &mut FileDiff, path: &str, old: &[u8], new: &[u8]) {
+    if d.binary {
+        return;
+    }
+    let new_text = std::str::from_utf8(new).ok();
+    let old_text = std::str::from_utf8(old).ok();
+    let first = new_text.or(old_text).and_then(|t| t.lines().next()).unwrap_or("");
+    let Some(lang) = sluice_syntax::detect(path, first) else {
+        return;
+    };
+    const MAX: usize = 2 * 1024 * 1024;
+    if let Some(t) = new_text {
+        d.syntax_new = sluice_syntax::highlight_lines(lang, t, MAX);
+    }
+    if let Some(t) = old_text {
+        d.syntax_old = sluice_syntax::highlight_lines(lang, t, MAX);
+    }
 }
 
 /// Diff of a working-tree path: `staged` = index vs HEAD, otherwise worktree vs index.
@@ -246,6 +267,7 @@ pub fn diff_work_file(
     let mut d = diff_bytes(&old, &new, opts);
     d.old_path = Some(old_path.unwrap_or(path).to_string());
     d.new_path = Some(path.to_string());
+    attach_syntax(&mut d, path, &old, &new);
     Ok(d)
 }
 

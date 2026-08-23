@@ -122,30 +122,83 @@ fn build_rows(d: &FileDiff, sbs: bool) -> Vec<DiffRow> {
     rows
 }
 
+fn syntax_color(t: &Theme, kind: sluice_core::diff::SyntaxKind) -> Option<gpui::Rgba> {
+    use sluice_core::diff::SyntaxKind as K;
+    Some(match kind {
+        K::Keyword => t.syn_keyword,
+        K::String => t.syn_string,
+        K::Comment => t.syn_comment,
+        K::Number | K::Constant => t.syn_number,
+        K::Function => t.syn_function,
+        K::Type | K::Tag => t.syn_type,
+        K::Attribute | K::Property => t.syn_attr,
+        K::Operator | K::Punct => t.muted,
+        K::Variable | K::Plain => return None,
+    })
+}
+
+/// Pick the syntax spans for a diff line: deleted lines use the old side, others the new.
+fn syntax_for<'a>(
+    d: &'a FileDiff,
+    line: &sluice_core::diff::DiffLine,
+) -> &'a [sluice_core::diff::SyntaxSpan] {
+    let (side, no) = match line.kind {
+        LineKind::Deleted => (&d.syntax_old, line.old_no),
+        _ => (&d.syntax_new, line.new_no.or(line.old_no)),
+    };
+    no.and_then(|n| side.get((n as usize).saturating_sub(1)))
+        .map(|v| v.as_slice())
+        .unwrap_or(&[])
+}
+
 fn code_text(
-    _t: &Theme,
+    t: &Theme,
     text: &str,
     highlights: &[Range<usize>],
+    syntax: &[sluice_core::diff::SyntaxSpan],
     color: gpui::Rgba,
     hl_bg: gpui::Rgba,
 ) -> impl IntoElement {
     let shown: String = text.replace('\t', "    ");
-    if highlights.is_empty() || shown.len() != text.len() {
+    if (highlights.is_empty() && syntax.is_empty()) || shown.len() != text.len() {
         return div().text_color(color).child(shown).into_any_element();
     }
-    let hls: Vec<(Range<usize>, HighlightStyle)> = highlights
-        .iter()
-        .filter(|r| r.end <= text.len() && text.is_char_boundary(r.start) && text.is_char_boundary(r.end))
-        .map(|r| {
-            (
-                r.clone(),
-                HighlightStyle {
-                    background_color: Some(hl_bg.into()),
-                    ..Default::default()
-                },
-            )
-        })
-        .collect();
+    // Non-overlapping segments: boundaries from syntax spans + word-diff ranges.
+    let mut cuts: Vec<usize> = vec![0, text.len()];
+    for s in syntax {
+        cuts.push((s.start as usize).min(text.len()));
+        cuts.push((s.end as usize).min(text.len()));
+    }
+    for r in highlights {
+        cuts.push(r.start.min(text.len()));
+        cuts.push(r.end.min(text.len()));
+    }
+    cuts.retain(|&c| text.is_char_boundary(c));
+    cuts.sort_unstable();
+    cuts.dedup();
+    let mut hls: Vec<(Range<usize>, HighlightStyle)> = Vec::new();
+    for w in cuts.windows(2) {
+        let (a, b) = (w[0], w[1]);
+        if a >= b {
+            continue;
+        }
+        let syn = syntax
+            .iter()
+            .find(|s| (s.start as usize) <= a && b <= (s.end as usize))
+            .and_then(|s| syntax_color(t, s.kind));
+        let bg = highlights.iter().any(|r| r.start <= a && b <= r.end);
+        if syn.is_none() && !bg {
+            continue;
+        }
+        hls.push((
+            a..b,
+            HighlightStyle {
+                color: syn.map(Into::into),
+                background_color: if bg { Some(hl_bg.into()) } else { None },
+                ..Default::default()
+            },
+        ));
+    }
     div()
         .text_color(color)
         .child(StyledText::new(shown).with_highlights(hls))
@@ -448,8 +501,15 @@ impl Workbench {
                                         LineKind::Deleted => t.del_mark,
                                         _ => t.ink,
                                     };
-                                    code_text(&t, &line.text, &line.highlights, color, t.sel_line)
-                                        .into_any_element()
+                                    code_text(
+                                        &t,
+                                        &line.text,
+                                        &line.highlights,
+                                        syntax_for(&diff, line),
+                                        color,
+                                        t.sel_line,
+                                    )
+                                    .into_any_element()
                                 }
                                 None => div().into_any_element(),
                             };
@@ -459,8 +519,15 @@ impl Workbench {
                                         LineKind::Added => t.add_mark,
                                         _ => t.ink,
                                     };
-                                    code_text(&t, &line.text, &line.highlights, color, t.sel_line)
-                                        .into_any_element()
+                                    code_text(
+                                        &t,
+                                        &line.text,
+                                        &line.highlights,
+                                        syntax_for(&diff, line),
+                                        color,
+                                        t.sel_line,
+                                    )
+                                    .into_any_element()
                                 }
                                 None => div().into_any_element(),
                             };
@@ -588,7 +655,14 @@ impl Workbench {
                                         .overflow_hidden()
                                         .whitespace_nowrap()
                                         .px(px(4.))
-                                        .child(code_text(&t, &l.text, &l.highlights, color, t.sel_line)),
+                                        .child(code_text(
+                                            &t,
+                                            &l.text,
+                                            &l.highlights,
+                                            syntax_for(&diff, l),
+                                            color,
+                                            t.sel_line,
+                                        )),
                                 )
                                 .into_any_element()
                         }

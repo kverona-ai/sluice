@@ -1,0 +1,25 @@
+[package]
+name = "sluice-syntax"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "tree-sitter syntax highlighting for Sluice diffs (first batch of languages built in)"
+
+[dependencies]
+sluice-core.workspace = true
+tree-sitter = "0.25"
+tree-sitter-highlight = "0.25"
+tree-sitter-rust = "0.24"
+tree-sitter-javascript = "0.23"
+tree-sitter-typescript = "0.23"
+tree-sitter-python = "0.23"
+tree-sitter-go = "0.23"
+tree-sitter-json = "0.24"
+tree-sitter-toml-ng = "0.7"
+tree-sitter-bash = "0.23"
+tree-sitter-c = "0.23"
+tree-sitter-cpp = "0.23"
+tree-sitter-java = "0.23"
+tree-sitter-yaml = "0.7"
+tree-sitter-html = "0.23"
+tree-sitter-css = "0.23"

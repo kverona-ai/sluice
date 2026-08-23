@@ -10,6 +10,7 @@ description = "Sluice domain layer: RepoStore state machine, commands and serial
 
 [dependencies]
 sluice-core.workspace = true
+sluice-syntax.workspace = true
 sluice-backend-gix.workspace = true
 sluice-backend-cli.workspace = true
 sluice-watch.workspace = true

@@ -29,6 +29,33 @@ pub struct DiffLine {
     pub no_newline: bool,
 }
 
+/// Syntax token class (filled by the syntax crate; `Plain` never stored).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SyntaxKind {
+    Plain,
+    Keyword,
+    String,
+    Comment,
+    Number,
+    Function,
+    Type,
+    Variable,
+    Property,
+    Constant,
+    Operator,
+    Punct,
+    Attribute,
+    Tag,
+}
+
+/// Byte range inside one line with its token class.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyntaxSpan {
+    pub start: u32,
+    pub end: u32,
+    pub kind: SyntaxKind,
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Hunk {
     pub old_start: u32,
@@ -62,6 +89,12 @@ pub struct FileDiff {
     pub old_lines: u32,
     pub new_lines: u32,
     pub truncated: bool,
+    /// Per-line syntax spans for the old / new side (index = line number − 1); empty when
+    /// no grammar matched or the file was too large.
+    #[serde(default)]
+    pub syntax_old: Vec<Vec<SyntaxSpan>>,
+    #[serde(default)]
+    pub syntax_new: Vec<Vec<SyntaxSpan>>,
 }
 
 impl FileDiff {

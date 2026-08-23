@@ -8,6 +8,7 @@ members = [
     "crates/graph",
     "crates/watch",
     "crates/bridge",
+    "crates/syntax",
     "crates/ui",
     "crates/app",
 ]
@@ -29,6 +30,7 @@ sluice-domain = { path = "crates/domain" }
 sluice-graph = { path = "crates/graph" }
 sluice-watch = { path = "crates/watch" }
 sluice-bridge = { path = "crates/bridge" }
+sluice-syntax = { path = "crates/syntax" }
 sluice-ui = { path = "crates/ui" }
 
 # --- UI (GPUI pinned; runtime_shaders avoids needing the Xcode Metal toolchain at build time) ---
