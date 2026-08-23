@@ -118,15 +118,12 @@ impl Workbench {
             let p_rm = w.path.clone();
             let p_ai = w.path.clone();
             let ai_name = ai.as_ref().map(|(_, n)| n.clone());
-            let ai_bin = ai
-                .as_ref()
-                .map(|(id, _)| {
-                    crate::ai::TOOLS
-                        .iter()
-                        .find(|s| s.id == id)
-                        .map(|s| s.bin.to_string())
-                })
-                .flatten();
+            let ai_bin = ai.as_ref().and_then(|(id, _)| {
+                crate::ai::TOOLS
+                    .iter()
+                    .find(|s| s.id == id)
+                    .map(|s| s.bin.to_string())
+            });
             rows = rows.child(
                 div()
                     .id(("wt", i))
