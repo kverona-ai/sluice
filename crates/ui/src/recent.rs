@@ -285,6 +285,8 @@ pub struct Settings {
     pub rail_expanded: bool,
     /// "zh" (default) or "en".
     pub lang: String,
+    /// "idea" (default) or "vscode".
+    pub keymap: String,
 }
 
 impl Default for Settings {
@@ -295,6 +297,7 @@ impl Default for Settings {
             fetch_minutes: 5,
             rail_expanded: false,
             lang: "zh".into(),
+            keymap: "idea".into(),
         }
     }
 }

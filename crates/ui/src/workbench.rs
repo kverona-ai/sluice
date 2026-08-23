@@ -362,11 +362,32 @@ impl Workbench {
         } else {
             crate::i18n::Lang::Zh
         });
+        this.apply_keymap(cx);
         this.start_watcher(cx);
         this.reload_log(cx);
         this.reload_changes(cx);
         this.start_background_fetch(cx);
         this
+    }
+
+    /// Bind the selected preset + `~/.sluice/keymap.json` overrides (later bindings win).
+    pub fn apply_keymap(&mut self, cx: &mut Context<Self>) {
+        let overrides = crate::keymap::load_overrides();
+        crate::keymap::bind(cx, &self.settings.keymap, &overrides);
+    }
+
+    pub fn set_keymap_preset(&mut self, preset: &str, cx: &mut Context<Self>) {
+        self.settings.keymap = preset.to_string();
+        self.save_settings();
+        self.apply_keymap(cx);
+        self.toast(
+            tf!(
+                "键位预设：{}",
+                if preset == "vscode" { "VS Code" } else { "IDEA" }
+            ),
+            cx,
+        );
+        cx.notify();
     }
 
     pub fn toggle_lang(&mut self, window: &mut Window, cx: &mut Context<Self>) {

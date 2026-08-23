@@ -117,45 +117,6 @@ pub enum CtxTarget {
     DetailFile { path: String, sha: Oid },
 }
 
-const KEYMAP_ROWS: &[(&str, &str, &str)] = &[
-    ("日志 / 提交图", "⌘9", "Alt+9"),
-    ("本地变更 / 提交面板", "⌘0", "Alt+0"),
-    ("Console", "⌘6", "Alt+6"),
-    ("分支面板", "⌃⇧`", "Ctrl+Shift+`"),
-    ("Stash 面板", "⌘5", "Ctrl+5"),
-    ("时光机（快照）", "⌘7", "Ctrl+7"),
-    ("Push 对话框", "⌘⇧K", "Ctrl+Shift+K"),
-    ("搜索提交", "⌘F", "Ctrl+F"),
-    ("作者过滤下拉", "⌘U", "Ctrl+U"),
-    ("文件历史（选中文件）", "⌘⇧H", "Ctrl+Shift+H"),
-    ("Blame（选中文件）", "⌥⌘B", "Ctrl+Alt+B"),
-    ("日期过滤下拉", "⌥⌘D", "Ctrl+Alt+D"),
-    ("路径过滤（git log -- path）", "⌥⌘P", "Ctrl+Alt+P"),
-    ("最近提交信息", "⌘⇧M", "Ctrl+Shift+M"),
-    ("Worktree 面板", "⌘⇧W", "Ctrl+Shift+W"),
-    ("深色 / 浅色主题", "⌘⇧T", "Ctrl+Shift+T"),
-    ("中文 / English", "⌘⇧L", "Ctrl+Shift+L"),
-    ("AI 工具接入面板", "⌘⇧I", "Ctrl+Shift+I"),
-    ("待确认队列（AI 提议）", "⌘⇧P", "Ctrl+Shift+P"),
-    ("打开仓库 / 最近仓库", "⌘O / ⌘⇧O", "Ctrl+O / Ctrl+Shift+O"),
-    ("交互式 rebase（从选中提交起）", "⌥⌘R", "Ctrl+Alt+R"),
-    ("交互式 rebase：调整顺序", "⌥↑ / ⌥↓", "Alt+↑ / Alt+↓"),
-    (
-        "冲突块：用我们的 / 他们的 / 两者",
-        "⌥1 / ⌥2 / ⌥3",
-        "Alt+1 / 2 / 3",
-    ),
-    ("保存并标记冲突已解决", "⌘S", "Ctrl+S"),
-    ("提交面板（聚焦消息）", "⌘K", "Ctrl+K"),
-    ("提交", "⌘↩", "Ctrl+Enter"),
-    ("全部暂存 / 取消暂存", "⌥⌘A / ⌥⌘U", "Ctrl+Alt+A / U"),
-    ("切换选中项暂存", "Space", "Space"),
-    ("下 / 上一处差异", "F7 / ⇧F7", "F7 / Shift+F7"),
-    ("双栏 / 统一切换", "⌥⌘\\", "Ctrl+Alt+\\"),
-    ("刷新", "⌥⌘Y", "Ctrl+Alt+Y"),
-    ("关闭弹层 / diff", "Esc", "Esc"),
-];
-
 impl Workbench {
     // ----- openers ---------------------------------------------------------
 
@@ -1494,13 +1455,17 @@ impl Workbench {
     fn render_settings(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.theme;
         let telemetry = self.telemetry;
+        let preset = self.settings.keymap.clone();
+        let overrides = crate::keymap::load_overrides();
         let mut keys = div()
             .flex()
             .flex_col()
             .gap(px(2.))
-            .max_h(px(300.))
+            .max_h(px(260.))
             .overflow_hidden();
-        for (action, mac, win) in KEYMAP_ROWS {
+        for e in crate::keymap::IDEA {
+            let chord = crate::keymap::effective(e.action, &preset, &overrides);
+            let overridden = overrides.contains_key(e.action);
             keys = keys.child(
                 div()
                     .flex()
@@ -1508,25 +1473,71 @@ impl Workbench {
                     .gap(px(10.))
                     .py(px(2.))
                     .text_size(px(12.))
-                    .child(div().flex_1().child(*action))
+                    .child(div().flex_1().child(tr(e.label)))
                     .child(
                         div()
-                            .w(px(120.))
                             .font_family(FONT_MONO)
-                            .text_size(px(11.5))
-                            .text_color(t.cyan_deep)
-                            .child(*mac),
+                            .text_size(px(11.))
+                            .text_color(t.faint)
+                            .child(e.action),
                     )
                     .child(
                         div()
-                            .w(px(130.))
+                            .w(px(200.))
                             .font_family(FONT_MONO)
                             .text_size(px(11.5))
-                            .text_color(t.muted)
-                            .child(*win),
+                            .text_color(if overridden { t.mag_deep } else { t.cyan_deep })
+                            .child(chord),
                     ),
             );
         }
+        let is_vscode = preset == "vscode";
+        let preset_btn = |id: &'static str, label: &'static str, on: bool| {
+            div()
+                .id(id)
+                .px(px(9.))
+                .py(px(2.))
+                .rounded(px(4.))
+                .text_size(px(11.5))
+                .cursor_pointer()
+                .border_1()
+                .border_color(if on { t.cyan } else { t.line })
+                .text_color(if on { t.cyan_deep } else { t.ink })
+                .when(on, |d| d.bg(t.cyan_16))
+                .hover(move |s| s.bg(t.ink_05))
+                .child(label)
+        };
+        let keymap_controls = div()
+            .flex()
+            .items_center()
+            .gap(px(8.))
+            .pb(px(4.))
+            .child(
+                preset_btn("km-idea", "IDEA", !is_vscode)
+                    .on_click(cx.listener(|this, _, _, cx| this.set_keymap_preset("idea", cx))),
+            )
+            .child(
+                preset_btn("km-vscode", "VS Code", is_vscode)
+                    .on_click(cx.listener(|this, _, _, cx| this.set_keymap_preset("vscode", cx))),
+            )
+            .child(div().ml_auto())
+            .child(
+                preset_btn("km-edit", "keymap.json", false).on_click(cx.listener(|this, _, _, cx| {
+                    match crate::keymap::write_template_if_missing() {
+                        Ok(p) => {
+                            let _ = open_path(&p);
+                            this.toast(tf!("已打开 {}", p.display()), cx);
+                        }
+                        Err(e) => this.toast(tf!("无法写入 keymap.json：{}", e), cx),
+                    }
+                })),
+            )
+            .child(
+                preset_btn("km-reload", "reload", false).on_click(cx.listener(|this, _, _, cx| {
+                    this.apply_keymap(cx);
+                    this.toast(tr("已重新加载 keymap"), cx);
+                })),
+            );
         div()
             .w(px(520.))
             .flex()
@@ -1549,8 +1560,9 @@ impl Workbench {
                             .gap(px(6.))
                             .child(section_label(
                                 &t,
-                                tr("键位（IDEA 预设 · VS Code 预设与逐条自定义在 M4 提供）"),
+                                tr("键位（预设 + ~/.sluice/keymap.json 逐条覆盖）"),
                             ))
+                            .child(keymap_controls)
                             .child(keys),
                     )
                     .child(
@@ -2089,3 +2101,22 @@ enum MenuAct {
 
 #[allow(dead_code)]
 fn _keep(_: &StashEntry, _: &SnapshotEntry, _: Tab) {}
+
+/// Open a file with the OS default handler (best effort).
+fn open_path(p: &std::path::Path) -> std::io::Result<()> {
+    #[cfg(target_os = "macos")]
+    {
+        std::process::Command::new("open").arg(p).spawn().map(|_| ())
+    }
+    #[cfg(target_os = "windows")]
+    {
+        std::process::Command::new("cmd")
+            .args(["/C", "start", "", &p.to_string_lossy()])
+            .spawn()
+            .map(|_| ())
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        std::process::Command::new("xdg-open").arg(p).spawn().map(|_| ())
+    }
+}
