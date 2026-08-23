@@ -17,18 +17,6 @@ AI agents write the code. You review, stage line by line, and open the gate.
 
 </div>
 
-<p align="center"><img src="docs/assets/screenshot-log.png" alt="Log — commit graph with stable lanes, agent badges, live filters and commit details with session provenance" width="1000"></p>
-<p align="center"><sub>Log — commit graph with stable lanes, agent badges, live filters and commit details with session provenance</sub></p>
-
-<p align="center"><img src="docs/assets/screenshot-changes.png" alt="Local Changes — staged / unstaged / untracked tree, side-by-side diff with hunk- and line-level staging" width="1000"></p>
-<p align="center"><sub>Local Changes — staged / unstaged / untracked tree, side-by-side diff with hunk- and line-level staging</sub></p>
-
-<p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR review — pull requests from your logged-in gh / glab, local diff, approve / request changes / comment, AI pre-review drafts" width="1000"></p>
-<p align="center"><sub>PR review — pull requests from your logged-in gh / glab, local diff, approve / request changes / comment, AI pre-review drafts</sub></p>
-
-<p align="center"><img src="docs/assets/screenshot-dark.png" alt="Dark theme" width="1000"></p>
-<p align="center"><sub>Dark theme</sub></p>
-
 
 ---
 
@@ -59,6 +47,18 @@ rebuilt for the agentic era:
 > **Status: early preview.** Reading history, filtering, diffing, staging (file / hunk / line),
 > committing, pull / push and AI commit drafts work today. Branch operations, merge / rebase UI,
 > the MCP bridge and mobile companions are in active development — see the [roadmap](#roadmap).
+
+<p align="center"><img src="docs/assets/screenshot-log.png" alt="Log — commit graph with stable lanes, agent badges, live filters and commit details with session provenance" width="1000"></p>
+<p align="center"><sub>Log — commit graph with stable lanes, agent badges, live filters and commit details with session provenance</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-changes.png" alt="Local Changes — staged / unstaged / untracked tree, side-by-side diff with hunk- and line-level staging" width="1000"></p>
+<p align="center"><sub>Local Changes — staged / unstaged / untracked tree, side-by-side diff with hunk- and line-level staging</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR review — pull requests from your logged-in gh / glab, local diff, approve / request changes / comment, AI pre-review drafts" width="1000"></p>
+<p align="center"><sub>PR review — pull requests from your logged-in gh / glab, local diff, approve / request changes / comment, AI pre-review drafts</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-dark.png" alt="Dark theme" width="1000"></p>
+<p align="center"><sub>Dark theme</sub></p>
 
 ## Features
 

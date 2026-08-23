@@ -17,18 +17,6 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 
 </div>
 
-<p align="center"><img src="docs/assets/screenshot-log.png" alt="日志 —— 稳定泳道的提交图、agent 徽章、实时过滤，以及带会话溯源的提交详情" width="1000"></p>
-<p align="center"><sub>日志 —— 稳定泳道的提交图、agent 徽章、实时过滤，以及带会话溯源的提交详情</sub></p>
-
-<p align="center"><img src="docs/assets/screenshot-changes.png" alt="本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与块级 / 行级暂存" width="1000"></p>
-<p align="center"><sub>本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与块级 / 行级暂存</sub></p>
-
-<p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿" width="1000"></p>
-<p align="center"><sub>PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿</sub></p>
-
-<p align="center"><img src="docs/assets/screenshot-dark.png" alt="深色主题" width="1000"></p>
-<p align="center"><sub>深色主题</sub></p>
-
 
 ---
 
@@ -45,6 +33,18 @@ AI 负责写代码，你在闸口审查、逐行暂存、放行。
 - **不被打断、不被惊吓** —— 文件监听让任何代理/终端动作约 200ms 内反映到界面；代理只能「提议」，放行永远由人点下（提议-确认队列开发中）。
 
 > **当前状态：早期预览。** 历史浏览、过滤、diff、暂存（文件/块/行）、提交、拉取/推送、AI 提交信息起草今天即可用。分支操作、merge/rebase 界面、MCP 桥接与移动端伴侣正在开发中——见[路线图](#路线图)。
+
+<p align="center"><img src="docs/assets/screenshot-log.png" alt="日志 —— 稳定泳道的提交图、agent 徽章、实时过滤，以及带会话溯源的提交详情" width="1000"></p>
+<p align="center"><sub>日志 —— 稳定泳道的提交图、agent 徽章、实时过滤，以及带会话溯源的提交详情</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-changes.png" alt="本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与块级 / 行级暂存" width="1000"></p>
+<p align="center"><sub>本地变更 —— 已暂存 / 未暂存 / 未跟踪树，双栏 diff 与块级 / 行级暂存</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-pr.png" alt="PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿" width="1000"></p>
+<p align="center"><sub>PR 评审 —— 来自已登录 gh / glab 的 PR 列表、本地 diff、批准 / 请求修改 / 评论、AI 预审草稿</sub></p>
+
+<p align="center"><img src="docs/assets/screenshot-dark.png" alt="深色主题" width="1000"></p>
+<p align="center"><sub>深色主题</sub></p>
 
 ## 功能特性
 

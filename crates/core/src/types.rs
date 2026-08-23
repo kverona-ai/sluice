@@ -115,6 +115,26 @@ pub struct RepoInfo {
     pub is_bare: bool,
     pub is_shallow: bool,
     pub head: HeadInfo,
+    /// Which VCS owns the working copy (05 §8: jujutsu repos map onto the same UI
+    /// through capability differences — no staging area, op log, change IDs).
+    #[serde(default)]
+    pub vcs: Vcs,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Vcs {
+    #[default]
+    Git,
+    /// `.jj` present; `colocated` = a `.git` directory sits next to it.
+    Jujutsu {
+        colocated: bool,
+    },
+}
+
+impl Vcs {
+    pub fn is_jj(self) -> bool {
+        matches!(self, Vcs::Jujutsu { .. })
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]

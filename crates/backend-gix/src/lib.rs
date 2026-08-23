@@ -19,16 +19,33 @@ const MAX_AHEAD_BEHIND_WALK: usize = 10_000;
 pub struct GixReader {
     repo: gix::ThreadSafeRepository,
     console: Console,
+    vcs: Vcs,
 }
 
 impl GixReader {
     /// Open the repository containing `path` (any subdirectory works; worktrees resolve to their common dir).
     pub fn discover(path: impl AsRef<Path>, console: Console) -> Result<Self> {
-        let repo = gix::discover(path.as_ref())
-            .with_context(|| format!("no git repository found at or above {}", path.as_ref().display()))?;
+        let p = path.as_ref();
+        // jujutsu (non-colocated): the git store lives in .jj/repo/store/git; open it with the
+        // jj workspace as the working directory so blobs / logs work through gix unchanged.
+        if p.join(".jj").is_dir() && !p.join(".git").exists() {
+            let store = p.join(".jj").join("repo").join("store").join("git");
+            if store.is_dir() {
+                let mut repo = gix::open(&store).with_context(|| format!("opening jj git store {}", store.display()))?;
+                repo.set_workdir(Some(p.to_path_buf()))?;
+                return Ok(Self { repo: repo.into_sync(), console, vcs: Vcs::Jujutsu { colocated: false } });
+            }
+        }
+        let repo = gix::discover(p)
+            .with_context(|| format!("no git repository found at or above {}", p.display()))?;
+        let vcs = match repo.workdir() {
+            Some(wd) if wd.join(".jj").is_dir() => Vcs::Jujutsu { colocated: true },
+            _ => Vcs::Git,
+        };
         Ok(Self {
             repo: repo.into_sync(),
             console,
+            vcs,
         })
     }
 
@@ -232,6 +249,7 @@ impl GitReader for GixReader {
             is_bare: repo.is_bare(),
             is_shallow: repo.is_shallow(),
             head,
+            vcs: self.vcs,
         })
     }
 
